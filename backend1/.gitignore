@@ -1,0 +1,10 @@
+## Inherits broad ignores from repo root .gitignore
+
+# Composer / PHP
+vendor/
+composer.lock
+.phpunit.result.cache
+.phpunit.cache
+
+# Local caches
+*.cache

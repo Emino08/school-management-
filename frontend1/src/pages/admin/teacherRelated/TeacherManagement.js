@@ -1,0 +1,518 @@
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+import axios from "axios";
+import { toast } from "sonner";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Users,
+  UserCheck,
+  Award,
+  TrendingUp,
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Mail,
+  Phone,
+  BookOpen,
+  Eye,
+  Filter,
+  Download,
+  RefreshCw,
+} from "lucide-react";
+import TeacherModal from "@/components/modals/TeacherModal";
+import EditTeacherModal from "@/components/modals/EditTeacherModal";
+
+const TeacherManagement = () => {
+  const navigate = useNavigate();
+  const { currentUser } = useSelector((state) => state.user);
+  const [teachers, setTeachers] = useState([]);
+  const [filteredTeachers, setFilteredTeachers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterRole, setFilterRole] = useState("all");
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [teacherToDelete, setTeacherToDelete] = useState(null);
+  
+  // Modal state
+  const [showTeacherModal, setShowTeacherModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [teacherToEdit, setTeacherToEdit] = useState(null);
+
+  // Analytics state
+  const [analytics, setAnalytics] = useState({
+    total: 0,
+    classMasters: 0,
+    examOfficers: 0,
+    activeRate: 100,
+  });
+
+  const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
+
+  useEffect(() => {
+    fetchTeachers();
+  }, []);
+
+  useEffect(() => {
+    filterTeachers();
+  }, [teachers, searchTerm, filterRole]);
+
+  const fetchTeachers = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/teachers`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
+
+      if (response.data.success) {
+        const teacherData = response.data.teachers || [];
+        setTeachers(teacherData);
+        calculateAnalytics(teacherData);
+      }
+    } catch (error) {
+      toast.error("Failed to fetch teachers");
+      console.error("Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateAnalytics = (data) => {
+    const total = data.length;
+    const classMasters = data.filter((t) => t.is_class_master).length;
+    const examOfficers = data.filter((t) => t.is_exam_officer).length;
+    const activeRate = total > 0 ? Math.round((total / total) * 100) : 100;
+
+    setAnalytics({
+      total,
+      classMasters,
+      examOfficers,
+      activeRate,
+    });
+  };
+
+  const filterTeachers = () => {
+    let filtered = [...teachers];
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter(
+        (teacher) =>
+          teacher.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          teacher.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Role filter
+    if (filterRole !== "all") {
+      if (filterRole === "class_master") {
+        filtered = filtered.filter((t) => t.is_class_master);
+      } else if (filterRole === "exam_officer") {
+        filtered = filtered.filter((t) => t.is_exam_officer);
+      } else if (filterRole === "regular") {
+        filtered = filtered.filter((t) => !t.is_class_master && !t.is_exam_officer);
+      }
+    }
+
+    setFilteredTeachers(filtered);
+  };
+
+  const handleDelete = async () => {
+    if (!teacherToDelete) return;
+
+    try {
+      const response = await axios.delete(
+        `${API_URL}/teachers/${teacherToDelete.id}`,
+        {
+          headers: { Authorization: `Bearer ${currentUser?.token}` },
+        }
+      );
+
+      if (response.data.success) {
+        toast.success("Teacher deleted successfully");
+        fetchTeachers();
+      }
+    } catch (error) {
+      toast.error("Failed to delete teacher");
+    } finally {
+      setShowDeleteDialog(false);
+      setTeacherToDelete(null);
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ["Name", "Email", "Phone", "Role", "Class", "Subjects"];
+    const rows = filteredTeachers.map((t) => [
+      t.name,
+      t.email,
+      t.phone || "N/A",
+      getRoleLabel(t),
+      t.class_name || "N/A",
+      t.subjects || "N/A",
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `teachers_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    toast.success("Exported to CSV");
+  };
+
+  const getRoleLabel = (teacher) => {
+    const roles = [];
+    if (teacher.is_class_master) roles.push("Class Master");
+    if (teacher.is_exam_officer) roles.push("Exam Officer");
+    if (roles.length === 0) roles.push("Teacher");
+    return roles.join(" & ");
+  };
+
+  const getRoleBadgeColor = (teacher) => {
+    if (teacher.is_class_master && teacher.is_exam_officer) return "bg-purple-100 text-purple-800";
+    if (teacher.is_class_master) return "bg-green-100 text-green-800";
+    if (teacher.is_exam_officer) return "bg-blue-100 text-blue-800";
+    return "bg-gray-100 text-gray-800";
+  };
+
+  const handleAddTeacher = () => {
+    console.log('TeacherManagement - Opening teacher modal');
+    setShowTeacherModal(true);
+  };
+
+  const handleModalSuccess = () => {
+    fetchTeachers();
+    setShowTeacherModal(false);
+  };
+
+  const handleEditTeacher = (teacher) => {
+    console.log('TeacherManagement - Opening edit modal for teacher:', teacher);
+    setTeacherToEdit(teacher);
+    setShowEditModal(true);
+  };
+
+  const handleEditModalSuccess = () => {
+    fetchTeachers();
+    setShowEditModal(false);
+    setTeacherToEdit(null);
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Teacher Management</h1>
+          <p className="text-gray-500 mt-1">
+            Manage teachers, class masters, and exam officers
+          </p>
+        </div>
+        <Button onClick={handleAddTeacher} className="gap-2">
+          <Plus className="w-4 h-4" />
+          Add Teacher
+        </Button>
+      </div>
+
+      {/* Analytics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Total Teachers
+            </CardTitle>
+            <Users className="w-5 h-5 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-900">{analytics.total}</div>
+            <p className="text-xs text-gray-500 mt-1">All registered teachers</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Class Masters
+            </CardTitle>
+            <UserCheck className="w-5 h-5 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-900">
+              {analytics.classMasters}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {analytics.total > 0
+                ? Math.round((analytics.classMasters / analytics.total) * 100)
+                : 0}
+              % of total teachers
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Exam Officers
+            </CardTitle>
+            <Award className="w-5 h-5 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-900">
+              {analytics.examOfficers}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {analytics.total > 0
+                ? Math.round((analytics.examOfficers / analytics.total) * 100)
+                : 0}
+              % of total teachers
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Active Rate
+            </CardTitle>
+            <TrendingUp className="w-5 h-5 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-900">
+              {analytics.activeRate}%
+            </div>
+            <p className="text-xs text-gray-500 mt-1">All teachers active</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters and Actions */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                placeholder="Search by name or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {/* Role Filter */}
+            <Select value={filterRole} onValueChange={setFilterRole}>
+              <SelectTrigger className="w-[200px]">
+                <Filter className="w-4 h-4 mr-2" />
+                <SelectValue placeholder="Filter by role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Teachers</SelectItem>
+                <SelectItem value="class_master">Class Masters</SelectItem>
+                <SelectItem value="exam_officer">Exam Officers</SelectItem>
+                <SelectItem value="regular">Regular Teachers</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Action Buttons */}
+            <Button variant="outline" onClick={fetchTeachers} className="gap-2">
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </Button>
+            <Button variant="outline" onClick={exportToCSV} className="gap-2">
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Teachers Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Teachers List ({filteredTeachers.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-gray-400" />
+              <p className="mt-2 text-gray-500">Loading teachers...</p>
+            </div>
+          ) : filteredTeachers.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="w-12 h-12 mx-auto text-gray-300" />
+              <p className="mt-2 text-gray-500">No teachers found</p>
+              <Button
+                variant="link"
+                onClick={() => navigate("/Admin/addteacher")}
+                className="mt-2"
+              >
+                Add your first teacher
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Class</TableHead>
+                    <TableHead>Subjects</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTeachers.map((teacher) => (
+                    <TableRow key={teacher.id}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{teacher.name}</div>
+                          <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                            <Mail className="w-3 h-3" />
+                            {teacher.email}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {teacher.phone ? (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Phone className="w-3 h-3 text-gray-400" />
+                            {teacher.phone}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">No phone</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getRoleBadgeColor(teacher)}>
+                          {getRoleLabel(teacher)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {teacher.class_name ? (
+                          <div className="flex items-center gap-1">
+                            <BookOpen className="w-3 h-3 text-gray-400" />
+                            <span className="text-sm">{teacher.class_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm">
+                          {teacher.subjects || <span className="text-gray-400">No subjects</span>}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/Admin/teachers/view/${teacher.id}`)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditTeacher(teacher)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setTeacherToDelete(teacher);
+                              setShowDeleteDialog(true);
+                            }}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Teacher Modal */}
+      <TeacherModal
+        open={showTeacherModal}
+        onOpenChange={setShowTeacherModal}
+        onSuccess={handleModalSuccess}
+        adminID={currentUser?._id || currentUser?.id}
+      />
+
+      {/* Edit Teacher Modal */}
+      <EditTeacherModal
+        open={showEditModal}
+        onOpenChange={setShowEditModal}
+        teacher={teacherToEdit}
+        onSuccess={handleEditModalSuccess}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Teacher?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {teacherToDelete?.name}? This action
+              cannot be undone and will remove all associated data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTeacherToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+};
+
+export default TeacherManagement;

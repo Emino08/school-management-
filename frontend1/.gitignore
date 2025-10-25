@@ -1,0 +1,11 @@
+## Inherits broad ignores from repo root .gitignore
+
+# Build output specific to SSR
+dist-ssr
+
+# Local config variants
+*.local
+
+# Preserve VS Code recommendations in this package
+.vscode/*
+!.vscode/extensions.json

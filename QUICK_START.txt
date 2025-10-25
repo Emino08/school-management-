@@ -1,0 +1,136 @@
+╔══════════════════════════════════════════════════════════════════╗
+║     SCHOOL MANAGEMENT SYSTEM - QUICK START GUIDE                ║
+╚══════════════════════════════════════════════════════════════════╝
+
+⚠️  THE ERROR YOU'RE SEEING: ERR_CONNECTION_REFUSED
+    This means: BACKEND IS NOT RUNNING!
+
+═══════════════════════════════════════════════════════════════════
+
+🚀 EASY START METHOD (Windows):
+
+   1. Double-click: RUN_MIGRATIONS.bat (first time only)
+   2. Double-click: START_BACKEND.bat (keep window open!)
+   3. Double-click: START_FRONTEND.bat (keep window open!)
+   4. Open browser: http://localhost:5173
+
+═══════════════════════════════════════════════════════════════════
+
+📝 MANUAL START METHOD:
+
+   TERMINAL 1 (Backend):
+   ─────────────────────
+   cd backend1
+   php -S localhost:8080 -t public
+
+   TERMINAL 2 (Frontend):
+   ──────────────────────
+   cd frontend1
+   npm run dev
+
+═══════════════════════════════════════════════════════════════════
+
+✅ HOW TO VERIFY IT'S WORKING:
+
+   1. Backend Check:
+      Open: http://localhost:8080/api/health
+      Should see: {"success": true, "status": "healthy"}
+
+   2. Frontend Check:
+      Open: http://localhost:5173
+      Should see: Login page
+
+   3. No Errors:
+      - No "ERR_CONNECTION_REFUSED"
+      - No red errors in browser console (F12)
+
+═══════════════════════════════════════════════════════════════════
+
+🐛 TROUBLESHOOTING:
+
+   ❌ Still seeing ERR_CONNECTION_REFUSED?
+      → Backend is NOT running
+      → Start backend first!
+      → Check http://localhost:8080/api/health
+
+   ❌ Database connection error?
+      → Start MySQL/MariaDB
+      → Check database.php credentials
+      → Create database: school_management
+
+   ❌ Port already in use?
+      → Close other programs using port 8080 or 5173
+      → Or change ports in config
+
+═══════════════════════════════════════════════════════════════════
+
+📊 WHAT YOU SHOULD SEE WHEN RUNNING:
+
+   Backend Terminal:
+   ─────────────────
+   PHP 8.x.x Development Server (http://localhost:8080) started
+   [No errors should appear]
+
+   Frontend Terminal:
+   ──────────────────
+   VITE vX.X.X  ready in XXX ms
+   ➜  Local:   http://localhost:5173/
+   [No errors should appear]
+
+═══════════════════════════════════════════════════════════════════
+
+🎯 FIRST TIME SETUP:
+
+   1. Run migrations (only once):
+      - Double-click RUN_MIGRATIONS.bat
+      OR
+      - cd backend1
+      - php migrations/009_add_minimum_payment_to_academic_years.php
+      - php migrations/010_create_activity_logs_table.php
+
+   2. Start backend (MUST be running):
+      - Double-click START_BACKEND.bat
+      OR
+      - cd backend1
+      - php -S localhost:8080 -t public
+
+   3. Start frontend:
+      - Double-click START_FRONTEND.bat
+      OR
+      - cd frontend1
+      - npm run dev
+
+   4. Login and use:
+      - Open http://localhost:5173
+      - Login with admin credentials
+      - Create academic year
+      - Start managing school!
+
+═══════════════════════════════════════════════════════════════════
+
+⚡ IMPORTANT NOTES:
+
+   • Backend MUST run first - Frontend needs it!
+   • Keep BOTH terminal windows open
+   • Don't close the terminals while using the app
+   • To stop: Press Ctrl+C in each terminal
+   • Need to restart? Stop both, start backend first, then frontend
+
+═══════════════════════════════════════════════════════════════════
+
+🎉 SUCCESS CHECKLIST:
+
+   ✅ Backend terminal running (no errors)
+   ✅ Frontend terminal running (no errors)
+   ✅ http://localhost:8080/api/health returns success
+   ✅ http://localhost:5173 shows the app
+   ✅ Can login without errors
+   ✅ No ERR_CONNECTION_REFUSED errors
+   ✅ Can navigate pages
+   ✅ Can create academic year
+
+═══════════════════════════════════════════════════════════════════
+
+For detailed instructions, see: START_SYSTEM.md
+
+Remember: BACKEND FIRST! 🔥

@@ -1,0 +1,49 @@
+MySQL DATABASE SCHEMA FOR PHP SLIM CONVERSION
+
+TABLES NEEDED:
+1. admins (schools)
+2. classes 
+3. students
+4. teachers
+5. subjects
+6. teacher_class_assignments
+7. grades
+8. exams
+9. exam_grades
+10. student_exam_results
+11. attendance
+12. academic_years
+13. academic_year_holidays
+14. fees_payments
+15. payment_details
+16. student_academic_year
+17. notices
+18. complaints
+19. teacher_attendance
+
+KEY CONVERSIONS:
+- ObjectId references -> BIGINT Foreign Keys
+- Embedded arrays -> Separate join tables
+- MongoDB collections -> Relational tables
+- Mongoose validators -> Database constraints
+
+MULTI-TENANCY:
+- All tables include school_id except admins
+- Data isolation at query level
+- No database-level multi-tenancy
+
+RELATIONSHIPS:
+Admin (1) -> Classes, Students, Teachers, Subjects, Notices, Complaints
+Class (1) -> Students, Subjects
+Teacher (1) -> Subjects, Classes (Many-to-Many via assignments)
+Subject (1) -> Grades, Exams, AttendanceRecords, ExamResults
+Student (1) -> Attendance, ExamResults, FeesPayments, Complaints
+AcademicYear (1) -> Students (Many-to-Many via student_academic_year)
+
+INDEXES REQUIRED:
+- All foreign keys
+- school_id on all multi-tenant tables
+- Email/unique fields
+- Date fields for reporting
+- Roll number lookups
+
