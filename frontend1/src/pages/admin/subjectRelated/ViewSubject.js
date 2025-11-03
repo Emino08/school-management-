@@ -6,6 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import TableTemplate from '../../../components/TableTemplate';
 import { MdInsertChart, MdTableChart } from "react-icons/md";
+import useInSession from '@/hooks/useInSession';
+import { RefreshCw } from 'lucide-react';
 
 const ViewSubject = () => {
   const navigate = useNavigate()
@@ -41,6 +43,24 @@ const ViewSubject = () => {
     };
   })
 
+  const { inSession, loading: inSessionLoading, entries, refresh } = useInSession({ classId: parseInt(classID, 10), subjectId: parseInt(subjectID, 10) });
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
+  const remainingLabel = (() => {
+    if (!inSession || !entries || entries.length === 0) return '';
+    const end = entries[0]?.end_time;
+    if (!end) return '';
+    const [hh, mm, ss] = end.split(':').map(Number);
+    const endDate = new Date();
+    endDate.setHours(hh || 0, mm || 0, ss || 0, 0);
+    const diffMs = endDate - now;
+    if (diffMs <= 0) return 'ending...';
+    const mins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    const remM = mins % 60;
+    return hrs > 0 ? `${hrs}h ${remM}m remaining` : `${remM}m remaining`;
+  })();
+
   const StudentsAttendanceButtonHaver = ({ row }) => {
     return (
       <div className="flex gap-2">
@@ -54,6 +74,8 @@ const ViewSubject = () => {
         <Button
           variant="default"
           className="bg-purple-600 hover:bg-purple-700"
+          disabled={!inSession}
+          title={!inSession ? (inSessionLoading ? 'Checking timetable...' : 'Attendance allowed only during scheduled class time') : ''}
           onClick={() =>
             navigate(`/Admin/subject/student/attendance/${row.id}/${subjectID}`)
           }
@@ -104,9 +126,26 @@ const ViewSubject = () => {
               Students List:
             </h5>
 
-            {selectedSection === 'attendance' &&
-              <TableTemplate buttonHaver={StudentsAttendanceButtonHaver} columns={studentColumns} rows={studentRows} />
-            }
+            {selectedSection === 'attendance' && (
+              <>
+                <div className="mb-2 text-sm text-gray-700 flex items-center gap-2">
+                  {inSessionLoading ? 'Checking timetable...' : (inSession ? 'Class is in session' : 'Attendance allowed only during scheduled class time')}
+                  <Button size="icon" variant="ghost" onClick={refresh} title="Refresh session status">
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
+                </div>
+                {inSession && entries && entries.length > 0 && (
+                  <div className="mb-3 text-xs text-gray-600 flex items-center gap-3">
+                    <span>
+                      {entries[0].day_of_week} • {entries[0].start_time?.slice(0,5)} - {entries[0].end_time?.slice(0,5)}
+                      {entries[0].room_number ? ` • Room ${entries[0].room_number}` : ''}
+                    </span>
+                    {remainingLabel && <span className="text-emerald-700">({remainingLabel})</span>}
+                  </div>
+                )}
+                <TableTemplate buttonHaver={StudentsAttendanceButtonHaver} columns={studentColumns} rows={studentRows} />
+              </>
+            )}
             {selectedSection === 'marks' &&
               <TableTemplate buttonHaver={StudentsMarksButtonHaver} columns={studentColumns} rows={studentRows} />
             }

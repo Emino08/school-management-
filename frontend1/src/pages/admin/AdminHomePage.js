@@ -16,7 +16,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { useEffect, useState } from 'react';
 import { getAllSclasses } from '../../redux/sclassRelated/sclassHandle';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { getAllStudents } from '../../redux/studentRelated/studentHandle';
 import { getAllTeachers } from '../../redux/teacherRelated/teacherHandle';
 import { getAllAcademicYears } from '../../redux/academicYearRelated/academicYearHandle';
@@ -28,7 +28,13 @@ import {
   MdCalendarToday,
   MdTrendingUp,
   MdInfo,
-  MdArrowForward
+  MdArrowForward,
+  MdAssignment,
+  MdCheckCircle,
+  MdWarning,
+  MdNotifications,
+  MdBook,
+  MdEventNote
 } from 'react-icons/md';
 import { useNavigate } from 'react-router-dom';
 
@@ -313,12 +319,13 @@ const AdminHomePage = () => {
                                 </div>
                                 <div className="p-6">
                                     <p className="text-gray-600 text-sm mb-2">{stat.title}</p>
-                                    <div className="flex items-center justify-between">`
+                                    <div className="flex items-center justify-between">
                                         <span className="text-3xl sm:text-4xl font-bold"><CountUp end={Number(stat?.value ?? 0)} duration={1.2} separator="," preserveValue redraw>{({ countUpRef }) => (<span ref={countUpRef} />)}</CountUp></span>
                                         <div className={`w-10 h-10 ${stat.color} rounded-full flex items-center justify-center group-hover:scale-110 transition-transform`}>
                                             <Icon className="h-5 w-5 text-white" />
                                         </div>
                                     </div>
+                                    <p className="text-gray-500 text-xs mt-2">{stat.description}</p>
                                 </div>
                             </CardContent>
                         </Card>
@@ -365,72 +372,218 @@ const AdminHomePage = () => {
                 </CardContent>
             </Card>
 
-            {/* System Status and Academic Year Selector */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card>
+            {/* Enhanced Analytics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Attendance Rate */}
+                <Card className="hover:shadow-lg transition-shadow">
                     <CardContent className="pt-6">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                                <MdTrendingUp className="h-5 w-5 text-green-600" />
+                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                <MdCheckCircle className="h-6 w-6 text-green-600" />
                             </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{numberOfClasses > 0 ? '100%' : '0%'}</p>
-                                <p className="text-sm text-gray-600">System Setup</p>
+                            <div className="flex-1">
+                                <p className="text-sm text-gray-600">Attendance Today</p>
+                                <p className="text-2xl font-bold text-gray-900">{dashboardStats?.attendance?.attendance_rate ?? 0}%</p>
+                            </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                            <div className="flex justify-between text-xs text-gray-600">
+                                <span className="flex items-center gap-1">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                    Present: {dashboardStats?.attendance?.present ?? 0}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                    Absent: {dashboardStats?.attendance?.absent ?? 0}
+                                </span>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
-                <Card>
+
+                {/* Students Marked */}
+                <Card className="hover:shadow-lg transition-shadow">
                     <CardContent className="pt-6">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                <MdSchool className="h-5 w-5 text-blue-600" />
+                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                <MdAssignment className="h-6 w-6 text-blue-600" />
                             </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">Active</p>
-                                <p className="text-sm text-gray-600">System Status</p>
+                            <div className="flex-1">
+                                <p className="text-sm text-gray-600">Students Marked</p>
+                                <p className="text-2xl font-bold text-gray-900">{dashboardStats?.attendance?.distinct_students_marked ?? 0}</p>
                             </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-500">Total students: {numberOfStudents}</p>
                         </div>
                     </CardContent>
                 </Card>
-                <Card>
+
+                {/* Academic Years */}
+                <Card className="hover:shadow-lg transition-shadow">
                     <CardContent className="pt-6">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                                <MdCalendarToday className="h-6 w-6 text-purple-600" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-sm text-gray-600">Academic Years</p>
+                                <p className="text-2xl font-bold text-gray-900">{academicYears.length}</p>
+                            </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-500">Current: {currentYear?.year_name || 'Not set'}</p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* System Status */}
+                <Card className="hover:shadow-lg transition-shadow">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                <MdTrendingUp className="h-6 w-6 text-green-600" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-sm text-gray-600">System Health</p>
+                                <p className="text-2xl font-bold text-green-600">Active</p>
+                            </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-500">All systems operational</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Financial Overview */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <MdAttachMoney className="h-5 w-5 text-green-600" />
+                        Financial Overview
+                    </CardTitle>
+                    <CardDescription>Revenue and payment statistics</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-sm text-green-800 font-medium">Total Revenue</p>
+                                <MdAttachMoney className="h-5 w-5 text-green-600" />
+                            </div>
+                            <p className="text-2xl font-bold text-green-900">
+                                ₦{(dashboardStats?.fees?.total_collected ?? 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-green-600 mt-1">All time collections</p>
+                        </div>
+
+                        <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-sm text-yellow-800 font-medium">Pending Fees</p>
+                                <MdWarning className="h-5 w-5 text-yellow-600" />
+                            </div>
+                            <p className="text-2xl font-bold text-yellow-900">
+                                ₦{(dashboardStats?.fees?.total_pending ?? 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-yellow-600 mt-1">Outstanding payments</p>
+                        </div>
+
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-sm text-blue-800 font-medium">Collection Rate</p>
+                                <MdTrendingUp className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <p className="text-2xl font-bold text-blue-900">
+                                {dashboardStats?.fees?.collection_rate ?? 0}%
+                            </p>
+                            <p className="text-xs text-blue-600 mt-1">Payment completion</p>
+                        </div>
+
+                        <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-sm text-purple-800 font-medium">This Month</p>
                                 <MdCalendarToday className="h-5 w-5 text-purple-600" />
                             </div>
+                            <p className="text-2xl font-bold text-purple-900">
+                                ₦{(dashboardStats?.fees?.this_month ?? 0).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-purple-600 mt-1">Current month revenue</p>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Academic Performance Metrics */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="hover:shadow-lg transition-shadow">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <MdBook className="h-5 w-5 text-indigo-600" />
+                            Exam Results
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-3">
                             <div>
-                                <p className="text-2xl font-bold text-gray-900">{academicYears.length}</p>
-                                <p className="text-sm text-gray-600">Academic Years</p>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-sm text-gray-600">Published</span>
+                                    <span className="font-bold text-green-600">{dashboardStats?.results?.published ?? 0}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div className="bg-green-600 h-2 rounded-full" style={{width: `${Math.min(((dashboardStats?.results?.published ?? 0) / Math.max(dashboardStats?.results?.total ?? 1, 1)) * 100, 100)}%`}}></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-sm text-gray-600">Pending</span>
+                                    <span className="font-bold text-yellow-600">{dashboardStats?.results?.pending ?? 0}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div className="bg-yellow-600 h-2 rounded-full" style={{width: `${Math.min(((dashboardStats?.results?.pending ?? 0) / Math.max(dashboardStats?.results?.total ?? 1, 1)) * 100, 100)}%`}}></div>
+                                </div>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                                <MdTrendingUp className="h-5 w-5 text-green-600" />
+
+                <Card className="hover:shadow-lg transition-shadow">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <MdEventNote className="h-5 w-5 text-pink-600" />
+                            Notices & Alerts
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between p-2 bg-blue-50 rounded">
+                                <span className="text-sm text-gray-700">Active Notices</span>
+                                <Badge className="bg-blue-600">{dashboardStats?.notices?.active ?? 0}</Badge>
                             </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{dashboardStats?.attendance?.attendance_rate ?? 0}%</p>
-                                <p className="text-sm text-gray-600">Attendance Rate Today</p>
+                            <div className="flex items-center justify-between p-2 bg-purple-50 rounded">
+                                <span className="text-sm text-gray-700">Recent Alerts</span>
+                                <Badge className="bg-purple-600">{dashboardStats?.notices?.recent ?? 0}</Badge>
                             </div>
-                        </div>
-                        <div className="mt-2 text-sm text-gray-600">
-                          Present: {dashboardStats?.attendance?.present ?? 0} · Absent: {dashboardStats?.attendance?.absent ?? 0}
                         </div>
                     </CardContent>
                 </Card>
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                                <MdInfo className="h-5 w-5 text-yellow-600" />
+
+                <Card className="hover:shadow-lg transition-shadow">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <MdNotifications className="h-5 w-5 text-red-600" />
+                            Complaints
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between p-2 bg-red-50 rounded">
+                                <span className="text-sm text-gray-700">Pending</span>
+                                <Badge className="bg-red-600">{dashboardStats?.complaints?.pending ?? 0}</Badge>
                             </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{dashboardStats?.attendance?.distinct_students_marked ?? 0}</p>
-                                <p className="text-sm text-gray-600">Students Marked Today</p>
+                            <div className="flex items-center justify-between p-2 bg-green-50 rounded">
+                                <span className="text-sm text-gray-700">Resolved</span>
+                                <Badge className="bg-green-600">{dashboardStats?.complaints?.resolved ?? 0}</Badge>
                             </div>
                         </div>
                     </CardContent>
@@ -439,6 +592,51 @@ const AdminHomePage = () => {
 
             {/* Academic Year Selector */}
             <AcademicYearSelector />
+
+            {/* Quick Insights - Key Metrics at a Glance */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <MdTrendingUp className="h-5 w-5 text-blue-600" />
+                        Quick Insights
+                    </CardTitle>
+                    <CardDescription>Key performance indicators at a glance</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                            <p className="text-xs text-blue-600 mb-1">Student-Teacher Ratio</p>
+                            <p className="text-xl font-bold text-blue-900">
+                                {numberOfTeachers > 0 ? Math.round(numberOfStudents / numberOfTeachers) : 0}:1
+                            </p>
+                        </div>
+                        <div className="text-center p-3 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border border-purple-200">
+                            <p className="text-xs text-purple-600 mb-1">Avg Class Size</p>
+                            <p className="text-xl font-bold text-purple-900">
+                                {numberOfClasses > 0 ? Math.round(numberOfStudents / numberOfClasses) : 0}
+                            </p>
+                        </div>
+                        <div className="text-center p-3 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200">
+                            <p className="text-xs text-green-600 mb-1">Subjects/Class</p>
+                            <p className="text-xl font-bold text-green-900">
+                                {numberOfClasses > 0 ? Math.round(totalSubjects / numberOfClasses) : 0}
+                            </p>
+                        </div>
+                        <div className="text-center p-3 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg border border-orange-200">
+                            <p className="text-xs text-orange-600 mb-1">Active Programs</p>
+                            <p className="text-xl font-bold text-orange-900">{numberOfClasses}</p>
+                        </div>
+                        <div className="text-center p-3 bg-gradient-to-br from-pink-50 to-pink-100 rounded-lg border border-pink-200">
+                            <p className="text-xs text-pink-600 mb-1">Staff Strength</p>
+                            <p className="text-xl font-bold text-pink-900">{numberOfTeachers}</p>
+                        </div>
+                        <div className="text-center p-3 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg border border-indigo-200">
+                            <p className="text-xs text-indigo-600 mb-1">Total Courses</p>
+                            <p className="text-xl font-bold text-indigo-900">{totalSubjects}</p>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* Chart Filters */}
             <Card>

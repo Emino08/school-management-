@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FiBarChart2, FiUsers, FiDollarSign, FiAlertCircle, FiTrendingUp } from 'react-icons/fi';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import PerformanceCharts from './PerformanceCharts';
 import AttendanceReports from './AttendanceReports';

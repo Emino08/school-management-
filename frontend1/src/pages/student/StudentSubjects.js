@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux';
-import { getSubjectList } from '../../redux/sclassRelated/sclassHandle';
+import { getSubjectList, getClassDetails } from '../../redux/sclassRelated/sclassHandle';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getUserDetails } from '../../redux/userRelated/userHandle';
 import CustomBarChart from '../../components/CustomBarChart'
-import { MdInsertChart, MdTableChart } from "react-icons/md";
+import { MdInsertChart, MdTableChart, MdSchool, MdBook } from "react-icons/md";
 
 const StudentSubjects = () => {
 
@@ -14,8 +15,11 @@ const StudentSubjects = () => {
     const { userDetails, currentUser, loading, response, error } = useSelector((state) => state.user);
 
     useEffect(() => {
-        dispatch(getUserDetails(currentUser._id, "Student"));
-    }, [dispatch, currentUser._id])
+        if (currentUser?.id || currentUser?._id) {
+            const studentId = currentUser.id || currentUser._id;
+            dispatch(getUserDetails(studentId, "Student"));
+        }
+    }, [dispatch, currentUser?.id, currentUser?._id])
 
     if (response) { console.log(response) }
     else if (error) { console.log(error) }
@@ -29,11 +33,14 @@ const StudentSubjects = () => {
         }
     }, [userDetails])
 
+    // Fetch subjects and class details when class ID is available
     useEffect(() => {
-        if (subjectMarks.length === 0) {
-            dispatch(getSubjectList(currentUser.sclassName._id, "ClassSubjects"));
+        const classId = currentUser?.sclassName?._id || currentUser?.class_id || userDetails?.class_id;
+        if (classId) {
+            dispatch(getSubjectList(classId, "ClassSubjects"));
+            dispatch(getClassDetails(classId, "Sclass"));
         }
-    }, [subjectMarks, dispatch, currentUser.sclassName._id]);
+    }, [dispatch, currentUser?.sclassName?._id, currentUser?.class_id, userDetails?.class_id]);
 
     const renderTableSection = () => {
         return (
@@ -71,25 +78,89 @@ const StudentSubjects = () => {
     };
 
     const renderClassDetailsSection = () => {
+        const className = sclassDetails?.class_name || sclassDetails?.sclassName ||
+                         currentUser?.sclassName?.sclassName || currentUser?.class_name ||
+                         'Not Assigned';
+
         return (
-            <div className="container mx-auto p-4">
-                <h4 className="text-2xl font-bold text-center mb-6">
-                    Class Details
-                </h4>
-                <h5 className="text-xl font-semibold mb-4">
-                    You are currently in Class {sclassDetails && sclassDetails.sclassName}
-                </h5>
-                <h6 className="text-lg mb-4">
-                    And these are the subjects:
-                </h6>
-                {subjectsList &&
-                    subjectsList.map((subject, index) => (
-                        <div key={index} className="mb-2">
-                            <p className="text-base">
-                                {subject.subName} ({subject.subCode})
-                            </p>
+            <div className="container mx-auto p-4 max-w-4xl">
+                {/* Class Information Card */}
+                <Card className="mb-6">
+                    <CardHeader className="bg-purple-50">
+                        <CardTitle className="flex items-center gap-2 text-purple-700">
+                            <MdSchool className="w-6 h-6" />
+                            Class Information
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                                <span className="font-semibold text-gray-700">Class:</span>
+                                <span className="text-lg text-purple-600 font-medium">{className}</span>
+                            </div>
+                            {sclassDetails?.grade_level && (
+                                <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-gray-700">Grade Level:</span>
+                                    <span className="text-gray-600">{sclassDetails.grade_level}</span>
+                                </div>
+                            )}
+                            {sclassDetails?.section && (
+                                <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-gray-700">Section:</span>
+                                    <span className="text-gray-600">{sclassDetails.section}</span>
+                                </div>
+                            )}
                         </div>
-                    ))}
+                    </CardContent>
+                </Card>
+
+                {/* Subjects Card */}
+                <Card>
+                    <CardHeader className="bg-blue-50">
+                        <CardTitle className="flex items-center gap-2 text-blue-700">
+                            <MdBook className="w-6 h-6" />
+                            Your Subjects
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        {subjectsList && Array.isArray(subjectsList) && subjectsList.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {subjectsList.map((subject, index) => (
+                                    <Card key={index} className="border border-blue-200 hover:shadow-md transition-shadow">
+                                        <CardContent className="p-4">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <h3 className="font-semibold text-lg text-gray-800">
+                                                        {subject.subject_name || subject.subName}
+                                                    </h3>
+                                                    <p className="text-sm text-gray-500 mt-1">
+                                                        Code: {subject.subject_code || subject.subCode}
+                                                    </p>
+                                                    {subject.sessions && (
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            {subject.sessions} sessions per week
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="bg-blue-100 rounded-full p-2">
+                                                    <MdBook className="w-5 h-5 text-blue-600" />
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8">
+                                <MdBook className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                                <p className="text-gray-500">No subjects assigned yet</p>
+                                <p className="text-sm text-gray-400 mt-2">
+                                    Please contact your administrator to assign subjects to your class
+                                </p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
         );
     };

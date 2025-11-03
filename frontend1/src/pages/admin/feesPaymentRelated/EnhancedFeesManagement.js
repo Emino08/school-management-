@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import axios from "@/redux/axiosConfig";
 import { toast } from "sonner";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
@@ -44,6 +44,7 @@ const EnhancedFeesManagement = () => {
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [feeStructures, setFeeStructures] = useState([]);
   const [stats, setStats] = useState({
     total_expected: 0,
     total_collected: 0,
@@ -58,8 +59,9 @@ const EnhancedFeesManagement = () => {
 
   // Form states
   const [paymentForm, setPaymentForm] = useState({
-    student_id: "",
+    student_id: undefined,
     term: "1",
+    fee_structure_id: undefined,
     amount: "",
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: "cash",
@@ -73,26 +75,26 @@ const EnhancedFeesManagement = () => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
+  const API_URL = import.meta.env.VITE_API_BASE_URL || process.env.REACT_APP_BASE_URL || "";
 
   useEffect(() => {
     fetchAcademicYears();
     fetchClasses();
+    fetchStudents(); // Load students on component mount
   }, []);
 
   useEffect(() => {
     if (selectedYear) {
       fetchStats();
       fetchAllPayments();
-      fetchStudents();
+      fetchStudents(); // Reload students when year changes
+      fetchFeeStructures(); // Load fee structures
     }
   }, [selectedYear]);
 
   const fetchAcademicYears = async () => {
     try {
-      const response = await axios.get(`${API_URL}/academic-years`, {
-        headers: { Authorization: `Bearer ${currentUser?.token}` }
-      });
+      const response = await axios.get(`${API_URL}/academic-years`);
       if (response.data.success) {
         const years = response.data.academic_years || [];
         setAcademicYears(years);
@@ -106,9 +108,7 @@ const EnhancedFeesManagement = () => {
 
   const fetchClasses = async () => {
     try {
-      const response = await axios.get(`${API_URL}/classes`, {
-        headers: { Authorization: `Bearer ${currentUser?.token}` }
-      });
+      const response = await axios.get(`${API_URL}/classes`);
       if (response.data.success) {
         setClasses(response.data.classes || []);
       }
@@ -119,14 +119,57 @@ const EnhancedFeesManagement = () => {
 
   const fetchStudents = async () => {
     try {
-      const response = await axios.get(`${API_URL}/students`, {
-        headers: { Authorization: `Bearer ${currentUser?.token}` }
-      });
+      const response = await axios.get(`${API_URL}/students`);
+
+      console.log('Students API Response:', response.data); // Debug log
+
       if (response.data.success) {
-        setStudents(response.data.students || []);
+        const studentsList = response.data.students || [];
+        console.log('Students loaded:', studentsList.length); // Debug log
+
+        // Debug: log first student object to see its exact structure
+        if (studentsList.length > 0) {
+          console.log('First student object:', studentsList[0]);
+          console.log('Student properties:', Object.keys(studentsList[0]));
+        }
+
+        setStudents(studentsList);
+
+        if (studentsList.length === 0) {
+          toast.info('No students found. Please add students first.');
+        }
+      } else {
+        toast.error('Failed to load students');
+        console.error('API returned success=false:', response.data);
       }
     } catch (error) {
       console.error("Error fetching students:", error);
+      toast.error('Failed to load students: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const fetchFeeStructures = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/fee-structures?academic_year_id=${selectedYear}`
+      );
+
+      console.log('Fee Structures API Response:', response.data); // Debug log
+
+      if (response.data.success) {
+        const structures = response.data.feeStructures || [];
+        console.log('Fee structures loaded:', structures.length); // Debug log
+        setFeeStructures(structures);
+
+        if (structures.length === 0) {
+          toast.info('No fee structures found. Please add fee structures first.');
+        }
+      } else {
+        console.error('API returned success=false:', response.data);
+      }
+    } catch (error) {
+      console.error("Error fetching fee structures:", error);
+      toast.error('Failed to load fee structures: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -134,10 +177,7 @@ const EnhancedFeesManagement = () => {
     setLoading(true);
     try {
       const response = await axios.get(
-        `${API_URL}/fees/stats?academic_year_id=${selectedYear}`,
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` }
-        }
+        `${API_URL}/fees/stats?academic_year_id=${selectedYear}`
       );
       if (response.data.success) {
         setStats(response.data.stats || stats);
@@ -152,10 +192,7 @@ const EnhancedFeesManagement = () => {
   const fetchAllPayments = async () => {
     try {
       const response = await axios.get(
-        `${API_URL}/fees/all?academic_year_id=${selectedYear}`,
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` }
-        }
+        `${API_URL}/fees/all?academic_year_id=${selectedYear}`
       );
       if (response.data.success) {
         setPayments(response.data.payments || []);
@@ -170,23 +207,34 @@ const EnhancedFeesManagement = () => {
     setLoading(true);
 
     try {
+      // Prepare payload, removing undefined values
+      const payload = {
+        student_id: paymentForm.student_id,
+        term: paymentForm.term,
+        academic_year_id: selectedYear,
+        amount: parseFloat(paymentForm.amount),
+        payment_date: paymentForm.payment_date,
+        payment_method: paymentForm.payment_method,
+        reference_number: paymentForm.reference_number,
+        notes: paymentForm.notes
+      };
+
+      // Add fee_structure_id only if it's defined
+      if (paymentForm.fee_structure_id) {
+        payload.fee_structure_id = paymentForm.fee_structure_id;
+      }
+
       const response = await axios.post(
         `${API_URL}/fees`,
-        {
-          ...paymentForm,
-          academic_year_id: selectedYear,
-          amount: parseFloat(paymentForm.amount)
-        },
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` }
-        }
+        payload
       );
 
       if (response.data.success) {
         toast.success("Payment recorded successfully!");
         setPaymentForm({
-          student_id: "",
+          student_id: undefined,
           term: "1",
+          fee_structure_id: undefined,
           amount: "",
           payment_date: new Date().toISOString().split('T')[0],
           payment_method: "cash",
@@ -210,9 +258,13 @@ const EnhancedFeesManagement = () => {
 
     const termFee = yearData[`term_${term}_fee`] || 0;
     const minPayment = yearData[`term_${term}_min_payment`] || termFee;
-    
+
+    // Map numeric term to database ENUM format
+    const termMap = { '1': '1st Term', '2': '2nd Term', '3': 'Full Year' };
+    const termEnum = termMap[term.toString()] || term;
+
     const studentPayments = payments.filter(
-      p => p.student_id === student.id && p.term === term
+      p => p.student_id === student.id && (p.term === term || p.term === termEnum || p.term === term.toString())
     );
     const totalPaid = studentPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
 
@@ -242,6 +294,15 @@ const EnhancedFeesManagement = () => {
     }
   };
 
+  const formatTermDisplay = (term) => {
+    // If term is already in format like "1st Term", return as is
+    if (typeof term === 'string' && term.includes('Term')) {
+      return term;
+    }
+    // Otherwise format numeric term
+    return `Term ${term}`;
+  };
+
   const exportToCSV = () => {
     if (payments.length === 0) {
       toast.error("No payments to export");
@@ -253,7 +314,7 @@ const EnhancedFeesManagement = () => {
       p.payment_date,
       p.student_name,
       p.class_name,
-      `Term ${p.term}`,
+      formatTermDisplay(p.term),
       p.amount,
       p.payment_method,
       p.reference_number || "N/A",
@@ -479,22 +540,87 @@ const EnhancedFeesManagement = () => {
                   <form onSubmit={handlePaymentSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>Student *</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Student *</Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={fetchStudents}
+                            className="h-6 px-2 text-xs"
+                          >
+                            <Search className="w-3 h-3 mr-1" />
+                            Refresh
+                          </Button>
+                        </div>
                         <Select
                           value={paymentForm.student_id}
                           onValueChange={(value) => setPaymentForm({ ...paymentForm, student_id: value })}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select Student" />
+                            <SelectValue placeholder={students.length === 0 ? "No students found" : "Select Student"} />
                           </SelectTrigger>
                           <SelectContent>
-                            {students.map((student) => (
-                              <SelectItem key={student.id} value={student.id.toString()}>
-                                {student.name} - {student.class_name}
-                              </SelectItem>
-                            ))}
+                            {students.length === 0 ? (
+                              <div className="px-4 py-2 text-sm text-gray-500 text-center">
+                                No students available
+                              </div>
+                            ) : (
+                              students
+                                .filter(student => student && student.id) // Filter out students without valid IDs
+                                .map((student) => {
+                                  // Build student display with fallbacks - handle empty strings too
+                                  const displayName = (student.name && student.name.trim()) ||
+                                                     (student.student_name && student.student_name.trim()) ||
+                                                     'Unknown Student';
+                                  const displayId = (student.id_number && student.id_number.trim()) ||
+                                                   (student.roll_number && student.roll_number.trim()) ||
+                                                   (student.idNumber && student.idNumber.trim()) ||
+                                                   '';
+                                  const displayClass = (student.class_name && student.class_name.trim()) ||
+                                                      (student.sclassName?.sclassName && student.sclassName.sclassName.trim()) ||
+                                                      '';
+
+                                  // Build complete display text
+                                  let displayText = displayName;
+                                  if (displayId) {
+                                    displayText += ` (${displayId})`;
+                                  }
+                                  if (displayClass) {
+                                    displayText += ` - ${displayClass}`;
+                                  }
+
+                                  // Ensure we have a valid ID
+                                  const studentIdValue = student.id ? student.id.toString() : `temp-${Math.random()}`;
+
+                                  // Debug log
+                                  console.log(`Rendering student ${student.id}:`, {
+                                    name: student.name,
+                                    id_number: student.id_number,
+                                    class_name: student.class_name,
+                                    displayText,
+                                    valueUsed: studentIdValue
+                                  });
+
+                                  return (
+                                    <SelectItem key={student.id} value={studentIdValue}>
+                                      {displayText}
+                                    </SelectItem>
+                                  );
+                                })
+                            )}
                           </SelectContent>
                         </Select>
+                        {students.length === 0 && (
+                          <p className="text-xs text-amber-600">
+                            No students found for the selected academic year. Please ensure students are enrolled.
+                          </p>
+                        )}
+                        {students.length > 0 && (
+                          <p className="text-xs text-gray-500">
+                            {students.length} student{students.length !== 1 ? 's' : ''} available
+                          </p>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -517,6 +643,55 @@ const EnhancedFeesManagement = () => {
                       </div>
 
                       <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Fee Type</Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={fetchFeeStructures}
+                            className="h-6 px-2 text-xs"
+                          >
+                            <Search className="w-3 h-3 mr-1" />
+                            Refresh
+                          </Button>
+                        </div>
+                        <Select
+                          value={paymentForm.fee_structure_id}
+                          onValueChange={(value) => {
+                            const selectedFee = feeStructures.find(f => f.id.toString() === value);
+                            setPaymentForm({
+                              ...paymentForm,
+                              fee_structure_id: value,
+                              amount: selectedFee ? selectedFee.amount : paymentForm.amount
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={feeStructures.length === 0 ? "No fee types found" : "Select Fee Type (Optional)"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {feeStructures.length === 0 ? (
+                              <div className="px-4 py-2 text-sm text-gray-500 text-center">
+                                No fee structures available.
+                              </div>
+                            ) : (
+                              feeStructures.map((fee) => (
+                                <SelectItem key={fee.id} value={fee.id.toString()}>
+                                  {fee.fee_name} - ${parseFloat(fee.amount).toLocaleString()}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {feeStructures.length > 0 && (
+                          <p className="text-xs text-gray-500">
+                            {feeStructures.length} fee type{feeStructures.length !== 1 ? 's' : ''} available
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
                         <Label>Amount *</Label>
                         <Input
                           type="number"
@@ -526,6 +701,9 @@ const EnhancedFeesManagement = () => {
                           placeholder="0.00"
                           required
                         />
+                        <p className="text-xs text-gray-500">
+                          Select a fee type to auto-fill the amount, or enter manually
+                        </p>
                       </div>
 
                       <div className="space-y-2">
@@ -587,6 +765,7 @@ const EnhancedFeesManagement = () => {
                         onClick={() => setPaymentForm({
                           student_id: "",
                           term: "1",
+                          fee_structure_id: "",
                           amount: "",
                           payment_date: new Date().toISOString().split('T')[0],
                           payment_method: "cash",
@@ -681,7 +860,7 @@ const EnhancedFeesManagement = () => {
                               <TableCell className="font-medium">{payment.student_name}</TableCell>
                               <TableCell>{payment.class_name}</TableCell>
                               <TableCell>
-                                <Badge variant="outline">Term {payment.term}</Badge>
+                                <Badge variant="outline">{formatTermDisplay(payment.term)}</Badge>
                               </TableCell>
                               <TableCell className="text-right font-semibold text-green-600">
                                 ${parseFloat(payment.amount).toLocaleString()}

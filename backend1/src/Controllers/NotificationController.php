@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Config\Database;
 use PDO;
 use PDOException;
+use Psr\Http\Message\ResponseInterface as Response;
+use Psr\Http\Message\ServerRequestInterface as Request;
 
 class NotificationController
 {
@@ -60,10 +62,16 @@ class NotificationController
         try {
             $sql = "
                 SELECT n.*,
-                       CONCAT(a.first_name, ' ', a.last_name) as sender_name,
+                       COALESCE(
+                         CASE 
+                           WHEN n.sender_role = 'Admin' THEN (SELECT school_name FROM admins WHERE id = n.sender_id)
+                           WHEN n.sender_role = 'Teacher' THEN (SELECT name FROM teachers WHERE id = n.sender_id)
+                           ELSE NULL
+                         END,
+                         'System'
+                       ) as sender_name,
                        c.class_name
                 FROM notifications n
-                JOIN admins a ON n.sender_id = a.id
                 LEFT JOIN classes c ON n.class_id = c.id
                 WHERE 1=1
             ";
@@ -116,11 +124,17 @@ class NotificationController
         try {
             $sql = "
                 SELECT n.*,
-                       CONCAT(a.first_name, ' ', a.last_name) as sender_name,
+                       COALESCE(
+                         CASE 
+                           WHEN n.sender_role = 'Admin' THEN (SELECT school_name FROM admins WHERE id = n.sender_id)
+                           WHEN n.sender_role = 'Teacher' THEN (SELECT name FROM teachers WHERE id = n.sender_id)
+                           ELSE NULL
+                         END,
+                         'System'
+                       ) as sender_name,
                        nr.read_at,
                        CASE WHEN nr.id IS NULL THEN 0 ELSE 1 END as is_read
                 FROM notifications n
-                JOIN admins a ON n.sender_id = a.id
                 LEFT JOIN notification_reads nr ON n.id = nr.notification_id
                     AND nr.user_id = :user_id AND nr.user_role = :user_role
                 WHERE n.status = 'Sent'
@@ -137,7 +151,12 @@ class NotificationController
             if ($userRole === 'Student') {
                 $sql .= " OR n.recipient_type = 'Students'
                          OR (n.recipient_type = 'Individual' AND n.recipient_id = :user_id)
-                         OR (n.recipient_type = 'Specific Class' AND n.class_id = (SELECT class_id FROM students WHERE id = :user_id))
+                         OR (n.recipient_type = 'Specific Class' AND n.class_id = (
+                              SELECT se.class_id FROM student_enrollments se
+                              WHERE se.student_id = :user_id
+                              ORDER BY se.academic_year_id DESC
+                              LIMIT 1
+                         ))
                 ";
             } elseif ($userRole === 'Teacher') {
                 $sql .= " OR n.recipient_type = 'Teachers'
@@ -218,7 +237,12 @@ class NotificationController
             if ($userRole === 'Student') {
                 $sql .= " OR n.recipient_type = 'Students'
                          OR (n.recipient_type = 'Individual' AND n.recipient_id = :user_id)
-                         OR (n.recipient_type = 'Specific Class' AND n.class_id = (SELECT class_id FROM students WHERE id = :user_id))
+                         OR (n.recipient_type = 'Specific Class' AND n.class_id = (
+                              SELECT se.class_id FROM student_enrollments se
+                              WHERE se.student_id = :user_id
+                              ORDER BY se.academic_year_id DESC
+                              LIMIT 1
+                         ))
                 ";
             } elseif ($userRole === 'Teacher') {
                 $sql .= " OR n.recipient_type = 'Teachers'
@@ -334,5 +358,78 @@ class NotificationController
                 'message' => 'Error sending scheduled notifications: ' . $e->getMessage()
             ];
         }
+    }
+
+    // ======= PSR-7 ROUTE HANDLERS =======
+
+    /**
+     * Create notification (PSR-7)
+     */
+    public function createNotification(Request $request, Response $response)
+    {
+        $user = $request->getAttribute('user');
+        $data = json_decode($request->getBody()->getContents(), true);
+
+        // Add sender info
+        $data['sender_id'] = $user->id;
+        $data['sender_role'] = $user->role;
+
+        $result = $this->create($data);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+
+    /**
+     * Get all notifications (PSR-7)
+     */
+    public function getAllNotifications(Request $request, Response $response)
+    {
+        $queryParams = $request->getQueryParams();
+        $result = $this->getAll($queryParams);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+
+    /**
+     * Update notification (PSR-7)
+     */
+    public function updateNotification(Request $request, Response $response, $args)
+    {
+        $id = $args['id'] ?? null;
+        $data = json_decode($request->getBody()->getContents(), true);
+
+        if (!$id) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Notification ID is required'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        $result = $this->update($id, $data);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
+     * Delete notification (PSR-7)
+     */
+    public function deleteNotification(Request $request, Response $response, $args)
+    {
+        $id = $args['id'] ?? null;
+
+        if (!$id) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Notification ID is required'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        $result = $this->delete($id);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 }

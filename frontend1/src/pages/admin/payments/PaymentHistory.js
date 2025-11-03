@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { FiSearch, FiDownload, FiFilter } from 'react-icons/fi';
 import { Button } from '@/components/ui/button';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 
 const PaymentHistory = () => {
@@ -15,8 +15,8 @@ const PaymentHistory = () => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     search: '',
-    payment_method: '',
-    status: '',
+    payment_method: 'all',
+    status: 'all',
     start_date: '',
     end_date: ''
   });
@@ -31,14 +31,12 @@ const PaymentHistory = () => {
 
   const fetchPayments = async () => {
     try {
-      const token = localStorage.getItem('token');
       const currentAcademicYear = JSON.parse(localStorage.getItem('currentAcademicYear'));
 
       const response = await axios.get(
         `${import.meta.env.VITE_API_BASE_URL}/payments`,
         {
-          params: { academic_year_id: currentAcademicYear?.id },
-          headers: { Authorization: `Bearer ${token}` }
+          params: { academic_year_id: currentAcademicYear?.id }
         }
       );
 
@@ -67,12 +65,12 @@ const PaymentHistory = () => {
     }
 
     // Payment method filter
-    if (filters.payment_method) {
+    if (filters.payment_method && filters.payment_method !== 'all') {
       filtered = filtered.filter(payment => payment.payment_method === filters.payment_method);
     }
 
     // Status filter
-    if (filters.status) {
+    if (filters.status && filters.status !== 'all') {
       filtered = filtered.filter(payment => payment.status === filters.status);
     }
 
@@ -143,7 +141,7 @@ const PaymentHistory = () => {
                   <SelectValue placeholder="All methods" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All methods</SelectItem>
+                  <SelectItem value="all">All methods</SelectItem>
                   <SelectItem value="Cash">Cash</SelectItem>
                   <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
                   <SelectItem value="Card">Card</SelectItem>
@@ -163,7 +161,7 @@ const PaymentHistory = () => {
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All statuses</SelectItem>
+                  <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="Completed">Completed</SelectItem>
                   <SelectItem value="Pending">Pending</SelectItem>
                   <SelectItem value="Failed">Failed</SelectItem>

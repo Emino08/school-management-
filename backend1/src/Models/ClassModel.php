@@ -10,7 +10,17 @@ class ClassModel extends BaseModel
     {
         $sql = "SELECT c.*,
                        COUNT(DISTINCT se.student_id) as student_count,
-                       COUNT(DISTINCT s.id) as subject_count
+                       COUNT(DISTINCT s.id) as subject_count,
+                       (
+                           SELECT t.name FROM teachers t
+                           WHERE t.is_class_master = 1 AND t.class_master_of = c.id
+                           ORDER BY t.id ASC LIMIT 1
+                       ) AS class_master_name,
+                       (
+                           SELECT t.id FROM teachers t
+                           WHERE t.is_class_master = 1 AND t.class_master_of = c.id
+                           ORDER BY t.id ASC LIMIT 1
+                       ) AS class_master_id
                 FROM {$this->table} c
                 LEFT JOIN student_enrollments se ON c.id = se.class_id
                     AND se.academic_year_id = :academic_year_id

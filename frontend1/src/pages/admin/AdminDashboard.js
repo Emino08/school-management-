@@ -21,6 +21,8 @@ import AttendanceManagement from "./studentRelated/AttendanceManagement";
 
 import AddNotice from "./noticeRelated/AddNotice";
 import ShowNotices from "./noticeRelated/ShowNotices";
+import NoticesManagement from "./noticeRelated/NoticesManagement";
+import ComplaintsManagement from "./complainRelated/ComplaintsManagement";
 
 import ShowSubjects from "./subjectRelated/ShowSubjects";
 import SubjectForm from "./subjectRelated/SubjectForm";
@@ -49,11 +51,12 @@ import ViewAllResults from "./resultRelated/ViewAllResults";
 
 // New Admin Features
 import PaymentManagement from "./payments/PaymentManagement";
-import ReportsAnalytics from "./reports/ReportsAnalytics";
-import NotificationManagement from "./notifications/NotificationManagement";
+import ReportsAnalytics from "./ReportsAnalytics";
+import NotificationsManagement from "./NotificationsManagement";
 import TimetableManagement from "./timetable/TimetableManagement";
-import SystemSettings from "./settings/SystemSettings";
-import ActivityLogs from "./logs/ActivityLogs";
+import SystemSettings from "./SystemSettings";
+import ActivityLogs from "./ActivityLogs";
+import UserManagement from "./UserManagement";
 
 const AdminDashboard = () => {
     const [open, setOpen] = useState(false);
@@ -70,11 +73,11 @@ const AdminDashboard = () => {
         <div className="flex min-h-screen bg-gray-100">
             {/* Sidebar */}
             <aside
-                className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-20 ${
+                className={`fixed left-0 top-0 h-screen bg-white border-r border-gray-200 transition-all duration-300 z-20 flex flex-col ${
                     open ? 'w-60' : 'w-0'
                 } overflow-hidden`}
             >
-                <div className="flex items-center justify-end p-4 border-b border-gray-200">
+                <div className="flex items-center justify-end p-4 border-b border-gray-200 flex-shrink-0">
                     <Button
                         variant="ghost"
                         size="icon"
@@ -85,7 +88,7 @@ const AdminDashboard = () => {
                     </Button>
                 </div>
                 <Separator />
-                <nav className="p-2">
+                <nav className="flex-1 overflow-y-auto p-2">
                     <SideBar/>
                 </nav>
             </aside>
@@ -125,11 +128,13 @@ const AdminDashboard = () => {
                             <Route path="/" element={<AdminHomePage/>}/>
                             <Route path="Admin/dashboard" element={<AdminHomePage/>}/>
                             <Route path="Admin/profile" element={<AdminProfile/>}/>
-                            <Route path="Admin/complains" element={<SeeComplains/>}/>
+                            <Route path="Admin/complains" element={<ComplaintsManagement/>}/>
+                            <Route path="Admin/complains-legacy" element={<SeeComplains/>}/>
 
                             {/* Notice */}
                             <Route path="Admin/addnotice" element={<AddNotice/>}/>
-                            <Route path="Admin/notices" element={<ShowNotices/>}/>
+                            <Route path="Admin/notices" element={<NoticesManagement/>}/>
+                            <Route path="Admin/notices-legacy" element={<ShowNotices/>}/>
 
                             {/* Subject */}
                             <Route path="Admin/subjects-management" element={<SubjectManagement/>}/>
@@ -238,10 +243,11 @@ const AdminDashboard = () => {
 
                             {/* New Admin Features */}
                             <Route path="Admin/payments/*" element={<PaymentManagement/>}/>
-                            <Route path="Admin/reports/*" element={<ReportsAnalytics/>}/>
-                            <Route path="Admin/notifications/*" element={<NotificationManagement/>}/>
+                            <Route path="Admin/reports" element={<ReportsAnalytics/>}/>
+                            <Route path="Admin/notifications" element={<NotificationsManagement/>}/>
                             <Route path="Admin/timetable/*" element={<TimetableManagement/>}/>
-                            <Route path="Admin/settings/*" element={<SystemSettings/>}/>
+                            <Route path="Admin/settings" element={<SystemSettings/>}/>
+                            <Route path="Admin/users" element={<UserManagement/>}/>
                             <Route path="Admin/activity-logs" element={<ActivityLogs/>}/>
 
                             {/* Catch-all route - must be last */}

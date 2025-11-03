@@ -34,6 +34,44 @@ class AttendanceController
             $currentYear = $this->academicYearModel->getCurrentYear($user->id);
             $data['academic_year_id'] = $currentYear['id'];
 
+            // Enforce timetable integration: only allow attendance during a scheduled class slot for the student's class and subject
+            $db = \App\Config\Database::getInstance()->getConnection();
+            // Get student's current class for this academic year
+            $en = $db->prepare("SELECT class_id FROM student_enrollments WHERE student_id = :sid AND academic_year_id = :yid AND status = 'active' LIMIT 1");
+            $en->execute([':sid' => (int)$data['student_id'], ':yid' => (int)$currentYear['id']]);
+            $enrollment = $en->fetch(\PDO::FETCH_ASSOC);
+            if (!$enrollment) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => 'Student not enrolled for current academic year']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+            $classId = (int)$enrollment['class_id'];
+            $dayOfWeek = date('l', strtotime($data['date']));
+            $time = isset($data['time']) && $data['time'] !== '' ? $data['time'] : date('H:i:s');
+            // Check timetable has an active slot covering this time
+            $tt = $db->prepare("SELECT COUNT(*) FROM timetable_entries te
+                                 WHERE te.admin_id = :admin
+                                   AND te.academic_year_id = :yid
+                                   AND te.class_id = :cid
+                                   AND te.subject_id = :sub
+                                   AND te.day_of_week = :dow
+                                   AND te.is_active = 1
+                                   AND :tm BETWEEN te.start_time AND te.end_time");
+            $tt->execute([
+                ':admin' => $user->id,
+                ':yid' => (int)$currentYear['id'],
+                ':cid' => $classId,
+                ':sub' => (int)$data['subject_id'],
+                ':dow' => $dayOfWeek,
+                ':tm' => $time,
+            ]);
+            if ((int)$tt->fetchColumn() === 0) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'No scheduled class for this subject at the specified date/time'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
+            }
+
             $attendanceId = $this->attendanceModel->markAttendance(Validator::sanitize($data));
 
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Attendance marked successfully', 'attendance_id' => $attendanceId]));

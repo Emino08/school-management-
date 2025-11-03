@@ -62,6 +62,13 @@ const TeacherManagement = () => {
   const [filterRole, setFilterRole] = useState("all");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [teacherToDelete, setTeacherToDelete] = useState(null);
+  const [classes, setClasses] = useState([]);
+  const [assignClassOpen, setAssignClassOpen] = useState(false);
+  const [assignClassTeacher, setAssignClassTeacher] = useState(null);
+  const [selectedClassId, setSelectedClassId] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState({ title: "", description: "", onConfirm: null });
+  const smallSuccess = (msg) => toast.success(msg, { duration: 1500, position: 'bottom-right' });
   
   // Modal state
   const [showTeacherModal, setShowTeacherModal] = useState(false);
@@ -80,6 +87,7 @@ const TeacherManagement = () => {
 
   useEffect(() => {
     fetchTeachers();
+    fetchClasses();
   }, []);
 
   useEffect(() => {
@@ -118,6 +126,85 @@ const TeacherManagement = () => {
       examOfficers,
       activeRate,
     });
+  };
+
+  const fetchClasses = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/classes`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
+      if (response.data.success) setClasses(response.data.classes || []);
+    } catch (e) {
+      console.error('Failed to fetch classes', e);
+    }
+  };
+
+  const toggleExamOfficer = async (teacher, make) => {
+    try {
+      const res = await axios.put(
+        `${API_URL}/teachers/${teacher.id}`,
+        { is_exam_officer: make ? 1 : 0 },
+        { headers: { Authorization: `Bearer ${currentUser?.token}` } }
+      );
+      if (res.data.success) {
+        smallSuccess(make ? 'Exam officer assigned' : 'Exam officer revoked');
+        fetchTeachers();
+      } else {
+        toast.error(res.data.message || 'Action failed');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error(e.response?.data?.message || 'Action failed');
+    }
+  };
+
+  const openAssignClassMaster = (teacher) => {
+    setAssignClassTeacher(teacher);
+    setSelectedClassId(teacher.class_master_of ? teacher.class_master_of.toString() : "");
+    setAssignClassOpen(true);
+  };
+
+  const submitAssignClassMaster = async () => {
+    if (!selectedClassId) {
+      toast.error('Please select a class');
+      return;
+    }
+    try {
+      const res = await axios.put(
+        `${API_URL}/teachers/${assignClassTeacher.id}`,
+        { is_class_master: 1, class_master_of: selectedClassId },
+        { headers: { Authorization: `Bearer ${currentUser?.token}` } }
+      );
+      if (res.data.success) {
+        smallSuccess('Class master assigned');
+        setAssignClassOpen(false);
+        fetchTeachers();
+      } else {
+        toast.error(res.data.message || 'Failed to assign');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error(e.response?.data?.message || 'Failed to assign');
+    }
+  };
+
+  const unassignClassMaster = async (teacher) => {
+    try {
+      const res = await axios.put(
+        `${API_URL}/teachers/${teacher.id}`,
+        { is_class_master: 0, class_master_of: null },
+        { headers: { Authorization: `Bearer ${currentUser?.token}` } }
+      );
+      if (res.data.success) {
+        smallSuccess('Class master removed');
+        fetchTeachers();
+      } else {
+        toast.error(res.data.message || 'Failed to remove');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error(e.response?.data?.message || 'Failed to remove');
+    }
   };
 
   const filterTeachers = () => {
@@ -389,12 +476,12 @@ const TeacherManagement = () => {
                     <TableHead>Role</TableHead>
                     <TableHead>Class</TableHead>
                     <TableHead>Subjects</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTeachers.map((teacher) => (
-                    <TableRow key={teacher.id}>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredTeachers.map((teacher) => (
+                  <TableRow key={teacher.id}>
                       <TableCell>
                         <div>
                           <div className="font-medium">{teacher.name}</div>
@@ -434,13 +521,46 @@ const TeacherManagement = () => {
                           {teacher.subjects || <span className="text-gray-400">No subjects</span>}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(`/Admin/teachers/view/${teacher.id}`)}
-                          >
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Role shortcuts */}
+                        {teacher.is_exam_officer ? (
+                          <Button variant="outline" size="sm" onClick={() => {
+                            setConfirmAction({
+                              title: 'Revoke Exam Officer',
+                              description: `Revoke exam officer for ${teacher.name}?`,
+                              onConfirm: async () => toggleExamOfficer(teacher, false),
+                            });
+                            setConfirmOpen(true);
+                          }}>
+                            Revoke Officer
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" onClick={() => toggleExamOfficer(teacher, true)}>
+                            Make Officer
+                          </Button>
+                        )}
+                        {teacher.is_class_master ? (
+                          <Button variant="outline" size="sm" onClick={() => {
+                            setConfirmAction({
+                              title: 'Remove Class Master',
+                              description: `Remove class master role from ${teacher.name}?`,
+                              onConfirm: async () => unassignClassMaster(teacher),
+                            });
+                            setConfirmOpen(true);
+                          }}>
+                            Remove Master
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" onClick={() => openAssignClassMaster(teacher)} disabled={classes.length === 0}>
+                            Make Master
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/Admin/teachers/view/${teacher.id}`)}
+                        >
                             <Eye className="w-4 h-4" />
                           </Button>
                           <Button
@@ -487,6 +607,62 @@ const TeacherManagement = () => {
         teacher={teacherToEdit}
         onSuccess={handleEditModalSuccess}
       />
+
+      {/* Assign Class Master Modal */}
+      <AlertDialog open={assignClassOpen} onOpenChange={setAssignClassOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Assign Class Master</AlertDialogTitle>
+            <AlertDialogDescription>
+              Select a class for {assignClassTeacher?.name}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Class" />
+              </SelectTrigger>
+              <SelectContent>
+                {classes.map((c) => (
+                  <SelectItem key={c.id} value={c.id.toString()}>
+                    {c.class_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setAssignClassOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={submitAssignClassMaster} disabled={!selectedClassId}>Assign</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unified Confirmation Dialog */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmAction.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmAction.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                try {
+                  if (typeof confirmAction.onConfirm === 'function') {
+                    await confirmAction.onConfirm();
+                  }
+                } finally {
+                  setConfirmOpen(false);
+                }
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

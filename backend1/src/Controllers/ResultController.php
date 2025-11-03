@@ -108,7 +108,7 @@ class ResultController
                     AND er.is_published = TRUE
                     ORDER BY s.subject_name";
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($sql);
+            $stmt = \App\Config\Database::getInstance()->getConnection()->prepare($sql);
             $stmt->execute([':student_id' => $studentId, ':exam_id' => $examId]);
             $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -193,7 +193,7 @@ class ResultController
                     AND er.is_published = TRUE
                     ORDER BY e.exam_date DESC, s.subject_name";
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($sql);
+            $stmt = \App\Config\Database::getInstance()->getConnection()->prepare($sql);
             $stmt->execute([':student_id' => $studentId]);
             $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -286,8 +286,7 @@ class ResultController
             $pins = $this->pinModel->bulkCreatePinsForClass(
                 $user->id,
                 $data['class_id'],
-                $data['exam_id'],
-                $data['academic_year_id'],
+                $data['max_checks'] ?? 5,
                 $data['valid_days'] ?? 30
             );
 
@@ -302,6 +301,79 @@ class ResultController
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Failed to generate PINs: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    // Bulk generate PINs for ALL students
+    public function bulkGeneratePinsAllStudents(Request $request, Response $response)
+    {
+        $data = $request->getParsedBody();
+        $user = $request->getAttribute('user');
+
+        try {
+            $pins = $this->pinModel->bulkCreatePinsForAllStudents(
+                $user->id,
+                $data['max_checks'] ?? 5,
+                $data['valid_days'] ?? 30
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'PINs generated for all students successfully',
+                'pins' => $pins,
+                'total' => count($pins)
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to generate PINs: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    // Export PINs as CSV
+    public function exportPinsCSV(Request $request, Response $response)
+    {
+        $user = $request->getAttribute('user');
+        $params = $request->getQueryParams();
+        $classId = $params['class_id'] ?? null;
+        $academicYearId = $params['academic_year_id'] ?? null;
+
+        try {
+            $pins = $this->pinModel->getPinsForExport($user->id, $classId, $academicYearId);
+
+            // Generate CSV content
+            $csv = "PIN Code,Student Name,Admission No,ID Number,Class,Max Checks,Used Checks,Remaining,Status,Expires At,Created At\n";
+
+            foreach ($pins as $pin) {
+                $csv .= sprintf(
+                    '"%s","%s","%s","%s","%s",%d,%d,%d,"%s","%s","%s"' . "\n",
+                    $pin['pin_code'],
+                    $pin['student_name'],
+                    $pin['admission_no'] ?? '',
+                    $pin['id_number'] ?? '',
+                    $pin['class_name'] ?? '',
+                    $pin['max_checks'],
+                    $pin['used_checks'],
+                    $pin['remaining_checks'],
+                    $pin['status'],
+                    $pin['expires_at'] ?? 'Never',
+                    $pin['created_at']
+                );
+            }
+
+            $response->getBody()->write($csv);
+            return $response
+                ->withHeader('Content-Type', 'text/csv')
+                ->withHeader('Content-Disposition', 'attachment; filename="result_pins_' . date('Y-m-d_His') . '.csv"');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to export PINs: ' . $e->getMessage()
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
@@ -366,7 +438,7 @@ class ResultController
                     FROM exam_results
                     WHERE exam_id = :exam_id";
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($sql);
+            $stmt = \App\Config\Database::getInstance()->getConnection()->prepare($sql);
             $stmt->execute([':exam_id' => $examId]);
             $stats = $stmt->fetch(\PDO::FETCH_ASSOC);
 
@@ -390,7 +462,7 @@ class ResultController
             }
 
             // Get exam details
-            $exam = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare("SELECT * FROM exams WHERE id = :exam_id");
+            $exam = \App\Config\Database::getInstance()->getConnection()->prepare("SELECT * FROM exams WHERE id = :exam_id");
             $exam->execute([':exam_id' => $examId]);
             $examData = $exam->fetch(\PDO::FETCH_ASSOC);
 
@@ -439,7 +511,7 @@ class ResultController
                           SET is_published = TRUE
                           WHERE exam_id = :exam_id
                           AND approval_status = 'approved'";
-            $updateStmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($updateSql);
+            $updateStmt = \App\Config\Database::getInstance()->getConnection()->prepare($updateSql);
             $updateStmt->execute([':exam_id' => $examId]);
 
             // Update exam status
@@ -447,7 +519,7 @@ class ResultController
                               SET can_be_published = TRUE,
                                   published_date = :publication_date
                               WHERE id = :exam_id";
-            $examUpdateStmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($examUpdateSql);
+            $examUpdateStmt = \App\Config\Database::getInstance()->getConnection()->prepare($examUpdateSql);
             $examUpdateStmt->execute([
                 ':exam_id' => $examId,
                 ':publication_date' => $data['publication_date']
@@ -553,7 +625,7 @@ class ResultController
 
             $sql .= " ORDER BY s.name, sub.subject_name";
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($sql);
+            $stmt = \App\Config\Database::getInstance()->getConnection()->prepare($sql);
             $stmt->execute($bindings);
             $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 

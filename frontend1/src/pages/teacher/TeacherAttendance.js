@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { useSelector } from 'react-redux';
+import useInSession from '@/hooks/useInSession';
+import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TeacherAttendance = () => {
@@ -16,6 +18,28 @@ const TeacherAttendance = () => {
 
   const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
   const teacherId = currentUser?.teacher?.id || currentUser?.id;
+  const selectedSubjectObj = subjects.find(s => String(s.id) === String(selectedSubject));
+  const classIdForSelected = selectedSubjectObj?.class_id || selectedSubjectObj?.classId;
+  const { inSession, loading: inSessionLoading, entries, refresh } = useInSession({ classId: classIdForSelected ? parseInt(classIdForSelected, 10) : undefined, subjectId: selectedSubject ? parseInt(selectedSubject, 10) : undefined, teacherId: teacherId ? parseInt(teacherId, 10) : undefined });
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const remainingLabel = (() => {
+    if (!inSession || !entries || entries.length === 0) return '';
+    const end = entries[0]?.end_time;
+    if (!end) return '';
+    const [hh, mm, ss] = end.split(':').map(Number);
+    const endDate = new Date();
+    endDate.setHours(hh || 0, mm || 0, ss || 0, 0);
+    const diffMs = endDate - now;
+    if (diffMs <= 0) return 'ending...';
+    const mins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    const remM = mins % 60;
+    return hrs > 0 ? `${hrs}h ${remM}m remaining` : `${remM}m remaining`;
+  })();
 
   useEffect(() => {
     if (teacherId) {
@@ -84,7 +108,8 @@ const TeacherAttendance = () => {
       }
     } catch (error) {
       console.error('Failed to mark attendance:', error);
-      toast.error('Failed to mark attendance');
+      const msg = error.response?.data?.message || 'Failed to mark attendance';
+      toast.error(msg);
     }
   };
 
@@ -113,6 +138,21 @@ const TeacherAttendance = () => {
 
           {selectedSubject && (
             <>
+              <div className="mb-1 text-sm text-gray-700 flex items-center gap-2">
+                {inSessionLoading ? 'Checking timetable...' : (inSession ? 'Class is in session' : 'Attendance allowed only during scheduled class time')}
+                <Button size="icon" variant="ghost" onClick={refresh} title="Refresh session status">
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+              </div>
+              {inSession && entries && entries.length > 0 && (
+                <div className="mb-3 text-xs text-gray-600 flex items-center gap-3">
+                  <span>
+                    {entries[0].day_of_week} • {entries[0].start_time?.slice(0,5)} - {entries[0].end_time?.slice(0,5)}
+                    {entries[0].room_number ? ` • Room ${entries[0].room_number}` : ''}
+                  </span>
+                  {remainingLabel && <span className="text-emerald-700">({remainingLabel})</span>}
+                </div>
+              )}
               {loading ? (
                 <div className="text-center py-8">Loading attendance data...</div>
               ) : (
@@ -164,6 +204,8 @@ const TeacherAttendance = () => {
                                 <Button
                                   size="sm"
                                   variant={student.today_status === 'present' ? 'default' : 'outline'}
+                                  disabled={!inSession}
+                                  title={!inSession ? (inSessionLoading ? 'Checking timetable...' : 'Not in session') : ''}
                                   onClick={() => handleAttendanceChange(student.student_id, 'present')}
                                   className={
                                     student.today_status === 'present'
@@ -176,6 +218,8 @@ const TeacherAttendance = () => {
                                 <Button
                                   size="sm"
                                   variant={student.today_status === 'absent' ? 'default' : 'outline'}
+                                  disabled={!inSession}
+                                  title={!inSession ? (inSessionLoading ? 'Checking timetable...' : 'Not in session') : ''}
                                   onClick={() => handleAttendanceChange(student.student_id, 'absent')}
                                   className={
                                     student.today_status === 'absent'

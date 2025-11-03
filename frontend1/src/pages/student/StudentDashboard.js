@@ -9,6 +9,7 @@ import StudentProfile from './StudentProfile';
 import StudentSubjects from './StudentSubjects';
 import ViewStdAttendance from './ViewStdAttendance';
 import StudentComplain from './StudentComplain';
+import StudentComplaintsList from './StudentComplaintsList';
 import StudentResults from './StudentResults';
 import StudentTimetable from "./StudentTimetable";
 import Logout from '../Logout'
@@ -83,11 +84,12 @@ const StudentDashboard = () => {
                             <Route path="Student/subjects" element={<StudentSubjects />} />
                             <Route path="Student/attendance" element={<ViewStdAttendance />} />
                             <Route path="Student/complain" element={<StudentComplain />} />
+                            <Route path="Student/complaints" element={<StudentComplaintsList />} />
                             <Route path="Student/timetable" element={<StudentTimetable />} />
                             <Route path="Student/results" element={<StudentResults />} />
 
                             <Route path="logout" element={<Logout />} />
-                            
+
                             {/* Catch-all route - must be last */}
                             <Route path='*' element={<Navigate to="/Student/dashboard" />} />
                         </Routes>

@@ -314,6 +314,82 @@ class TimetableController
         }
     }
 
+    // Check if a class is currently in session for an optional subject/teacher
+    public function isInSession(Request $request, Response $response)
+    {
+        $user = $request->getAttribute('user');
+        $params = $request->getQueryParams();
+
+        try {
+            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            if (!$currentYear) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => 'No active academic year found']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+
+            // Accept either class_id or student_id (derive class from active enrollment)
+            $classId = isset($params['class_id']) ? (int)$params['class_id'] : 0;
+            if ($classId <= 0 && isset($params['student_id'])) {
+                $stmt = $this->db->prepare("SELECT class_id FROM student_enrollments WHERE student_id = ? AND academic_year_id = ? AND status = 'active' LIMIT 1");
+                $stmt->execute([(int)$params['student_id'], (int)$currentYear['id']]);
+                $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                $classId = $row ? (int)$row['class_id'] : 0;
+            }
+            if ($classId <= 0) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => 'class_id or valid student_id is required']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+
+            $subjectId = isset($params['subject_id']) && $params['subject_id'] !== '' ? (int)$params['subject_id'] : null;
+            $teacherId = isset($params['teacher_id']) && $params['teacher_id'] !== '' ? (int)$params['teacher_id'] : null;
+
+            $date = $params['date'] ?? date('Y-m-d');
+            $time = $params['time'] ?? date('H:i:s');
+            $dayOfWeek = date('l', strtotime($date));
+
+            $sql = "SELECT te.*, s.subject_name, t.name as teacher_name
+                    FROM timetable_entries te
+                    LEFT JOIN subjects s ON te.subject_id = s.id
+                    LEFT JOIN teachers t ON te.teacher_id = t.id
+                    WHERE te.admin_id = :admin
+                      AND te.academic_year_id = :yid
+                      AND te.class_id = :cid
+                      AND te.is_active = 1
+                      AND te.day_of_week = :dow
+                      AND :tm BETWEEN te.start_time AND te.end_time";
+            $bindings = [
+                ':admin' => $user->id,
+                ':yid' => (int)$currentYear['id'],
+                ':cid' => $classId,
+                ':dow' => $dayOfWeek,
+                ':tm' => $time,
+            ];
+
+            if ($subjectId) { $sql .= " AND te.subject_id = :sub"; $bindings[':sub'] = $subjectId; }
+            if ($teacherId) { $sql .= " AND te.teacher_id = :tid"; $bindings[':tid'] = $teacherId; }
+
+            $sql .= " ORDER BY te.start_time";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($bindings);
+            $entries = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'in_session' => !empty($entries),
+                'entries' => $entries,
+                'context' => [
+                    'date' => $date,
+                    'time' => $time,
+                    'day_of_week' => $dayOfWeek,
+                ],
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Failed to check session: ' . $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
     // Update timetable entry
     public function updateEntry(Request $request, Response $response, $args)
     {

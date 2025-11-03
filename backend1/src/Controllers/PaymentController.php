@@ -18,9 +18,11 @@ class PaymentController
     // ======= FEE STRUCTURES =======
 
     // Create fee structure
-    public function createFeeStructure($data)
+    public function createFeeStructure($request, $response)
     {
         try {
+            $data = $request->getParsedBody();
+
             $stmt = $this->db->prepare("
                 INSERT INTO fee_structures
                 (fee_name, class_id, amount, frequency, academic_year_id, description, is_mandatory)
@@ -37,23 +39,30 @@ class PaymentController
                 ':is_mandatory' => $data['is_mandatory'] ?? true
             ]);
 
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => true,
                 'message' => 'Fee structure created successfully',
                 'id' => $this->db->lastInsertId()
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
         } catch (PDOException $e) {
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Error creating fee structure: ' . $e->getMessage()
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 
     // Get all fee structures
-    public function getAllFeeStructures($academicYearId = null, $classId = null)
+    public function getAllFeeStructures($request, $response)
     {
         try {
+            // Get query parameters
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+            $classId = $queryParams['class_id'] ?? null;
+
             $sql = "
                 SELECT fs.*,
                        c.class_name,
@@ -82,22 +91,27 @@ class PaymentController
             $stmt->execute($params);
             $feeStructures = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => true,
                 'feeStructures' => $feeStructures
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
         } catch (PDOException $e) {
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Error fetching fee structures: ' . $e->getMessage()
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 
     // Update fee structure
-    public function updateFeeStructure($id, $data)
+    public function updateFeeStructure($request, $response, $args)
     {
         try {
+            $id = $args['id'];
+            $data = $request->getParsedBody();
+
             $stmt = $this->db->prepare("
                 UPDATE fee_structures
                 SET fee_name = :fee_name,
@@ -120,34 +134,40 @@ class PaymentController
                 ':is_mandatory' => $data['is_mandatory'] ?? true
             ]);
 
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => true,
                 'message' => 'Fee structure updated successfully'
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
         } catch (PDOException $e) {
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Error updating fee structure: ' . $e->getMessage()
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 
     // Delete fee structure
-    public function deleteFeeStructure($id)
+    public function deleteFeeStructure($request, $response, $args)
     {
         try {
+            $id = $args['id'];
+
             $stmt = $this->db->prepare("DELETE FROM fee_structures WHERE id = :id");
             $stmt->execute([':id' => $id]);
 
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => true,
                 'message' => 'Fee structure deleted successfully'
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
         } catch (PDOException $e) {
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Error deleting fee structure: ' . $e->getMessage()
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 
@@ -390,6 +410,84 @@ class PaymentController
             return [
                 'success' => false,
                 'message' => 'Error creating invoice: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    // ======= FEE STRUCTURE SYNC WITH ACADEMIC YEAR =======
+
+    // Create or update default fee structures based on academic year term fees
+    public function importFeeStructuresFromAcademicYear($adminId, $academicYearId)
+    {
+        try {
+            // Fetch academic year configuration
+            $stmt = $this->db->prepare("SELECT * FROM academic_years WHERE id = :id");
+            $stmt->execute([':id' => $academicYearId]);
+            $year = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$year) {
+                return [ 'success' => false, 'message' => 'Academic year not found' ];
+            }
+
+            // Determine terms and fees
+            $terms = (int)($year['number_of_terms'] ?? $year['total_terms'] ?? 3);
+            $map = [
+                1 => (float)($year['term_1_fee'] ?? 0),
+                2 => (float)($year['term_2_fee'] ?? 0),
+                3 => (float)($year['term_3_fee'] ?? 0),
+            ];
+
+            $created = [];
+            $updated = [];
+
+            for ($t = 1; $t <= $terms; $t++) {
+                $fee = $map[$t] ?? 0;
+                if ($fee <= 0) continue; // skip zero/undefined fees
+
+                $feeName = "Tuition Fee - Term {$t}";
+
+                // Check if fee structure exists for this year and name (class-agnostic)
+                $check = $this->db->prepare(
+                    "SELECT id, amount FROM fee_structures WHERE academic_year_id = :year AND fee_name = :name AND class_id IS NULL"
+                );
+                $check->execute([':year' => $academicYearId, ':name' => $feeName]);
+                $existing = $check->fetch(PDO::FETCH_ASSOC);
+
+                if ($existing) {
+                    // Update amount if different
+                    if ((float)$existing['amount'] !== (float)$fee) {
+                        $upd = $this->db->prepare(
+                            "UPDATE fee_structures SET amount = :amount, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
+                        );
+                        $upd->execute([':amount' => $fee, ':id' => $existing['id']]);
+                        $updated[] = [ 'id' => $existing['id'], 'fee_name' => $feeName, 'amount' => $fee ];
+                    }
+                } else {
+                    // Create new fee structure
+                    $ins = $this->db->prepare(
+                        "INSERT INTO fee_structures (fee_name, class_id, amount, frequency, academic_year_id, description, is_mandatory) 
+                         VALUES (:fee_name, NULL, :amount, 'Termly', :year, :description, 1)"
+                    );
+                    $ins->execute([
+                        ':fee_name' => $feeName,
+                        ':amount' => $fee,
+                        ':year' => $academicYearId,
+                        ':description' => 'Auto-imported from academic year configuration'
+                    ]);
+                    $created[] = [ 'id' => $this->db->lastInsertId(), 'fee_name' => $feeName, 'amount' => $fee ];
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Fee structures synchronized with academic year',
+                'created' => $created,
+                'updated' => $updated
+            ];
+        } catch (PDOException $e) {
+            return [
+                'success' => false,
+                'message' => 'Failed to import fee structures: ' . $e->getMessage()
             ];
         }
     }

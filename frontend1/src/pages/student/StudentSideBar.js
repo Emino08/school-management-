@@ -8,7 +8,8 @@ import {
   MdClass,
   MdAssignment,
   MdAssessment,
-  MdCalendarToday
+  MdCalendarToday,
+  MdMessage
 } from "react-icons/md";
 
 const StudentSideBar = () => {
@@ -82,13 +83,25 @@ const StudentSideBar = () => {
         <Link
           to="/Student/complain"
           className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
-            isActive("/Student/complain")
+            isActive("/Student/complain") && !isActive("/Student/complaints")
               ? "bg-primary text-primary-foreground"
               : "hover:bg-accent hover:text-accent-foreground"
           }`}
         >
           <MdAnnouncement className="w-5 h-5" />
-          <span>Complaint</span>
+          <span>Submit Complaint</span>
+        </Link>
+
+        <Link
+          to="/Student/complaints"
+          className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
+            isActive("/Student/complaints")
+              ? "bg-primary text-primary-foreground"
+              : "hover:bg-accent hover:text-accent-foreground"
+          }`}
+        >
+          <MdMessage className="w-5 h-5" />
+          <span>My Complaints</span>
         </Link>
 
         <div className="border-t my-2"></div>

@@ -25,7 +25,7 @@ class ActivityLogController
         $params = $request->getQueryParams();
 
         // Only admin can view all logs
-        if ($user->role !== 'admin') {
+        if ($user->role !== 'Admin') {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -74,7 +74,7 @@ class ActivityLogController
         $params = $request->getQueryParams();
 
         // Only admin can view stats
-        if ($user->role !== 'admin') {
+        if ($user->role !== 'Admin') {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -133,6 +133,71 @@ class ActivityLogController
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Failed to fetch logs: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Export activity logs to CSV
+     */
+    public function export(Request $request, Response $response)
+    {
+        $user = $request->getAttribute('user');
+        $params = $request->getQueryParams();
+
+        // Only admin can export logs
+        if ($user->role !== 'Admin') {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Unauthorized access'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+        }
+
+        try {
+            $userId = $params['user_id'] ?? null;
+            $userType = $params['user_type'] ?? null;
+            $activityType = $params['activity_type'] ?? null;
+            $entityType = $params['entity_type'] ?? null;
+
+            $logs = $this->logger->getLogs(
+                $userId,
+                $userType,
+                $activityType,
+                $entityType,
+                10000, // Export up to 10,000 records
+                0
+            );
+
+            // Generate CSV
+            $csv = "ID,User ID,User Type,Activity Type,Entity Type,Entity ID,Description,IP Address,Timestamp\n";
+
+            foreach ($logs as $log) {
+                $csv .= sprintf(
+                    "%s,%s,%s,%s,%s,%s,\"%s\",%s,%s\n",
+                    $log['id'] ?? '',
+                    $log['user_id'] ?? '',
+                    $log['user_type'] ?? '',
+                    $log['activity_type'] ?? '',
+                    $log['entity_type'] ?? '',
+                    $log['entity_id'] ?? '',
+                    str_replace('"', '""', $log['description'] ?? ''),
+                    $log['ip_address'] ?? '',
+                    $log['created_at'] ?? ''
+                );
+            }
+
+            $filename = 'activity_logs_' . date('Y-m-d_His') . '.csv';
+
+            $response->getBody()->write($csv);
+            return $response
+                ->withHeader('Content-Type', 'text/csv')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to export logs: ' . $e->getMessage()
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }

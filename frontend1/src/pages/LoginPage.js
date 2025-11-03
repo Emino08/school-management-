@@ -26,23 +26,20 @@ const LoginPage = ({ role }) => {
   const [emailError, setEmailError] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
   const [rollNumberError, setRollNumberError] = useState(false);
-  const [studentNameError, setStudentNameError] = useState(false);
 
   const handleSubmit = (event) => {
     event.preventDefault();
 
     if (role === "Student") {
       const rollNum = event.target.rollNumber.value;
-      const studentName = event.target.studentName.value;
       const password = event.target.password.value;
 
-      if (!rollNum || !studentName || !password) {
+      if (!rollNum || !password) {
         if (!rollNum) setRollNumberError(true);
-        if (!studentName) setStudentNameError(true);
         if (!password) setPasswordError(true);
         return;
       }
-      const fields = { rollNum, studentName, password };
+      const fields = { rollNum, password };
       setLoader(true);
       dispatch(loginUser(fields, role));
     } else {
@@ -66,7 +63,6 @@ const LoginPage = ({ role }) => {
     if (name === "email") setEmailError(false);
     if (name === "password") setPasswordError(false);
     if (name === "rollNumber") setRollNumberError(false);
-    if (name === "studentName") setStudentNameError(false);
   };
 
   const guestModeHandler = () => {
@@ -79,8 +75,7 @@ const LoginPage = ({ role }) => {
       dispatch(loginUser(fields, role));
     } else if (role === "Student") {
       const rollNum = "1";
-      const studentName = "Janak Raj Ojha";
-      const fields = { rollNum, studentName, password };
+      const fields = { rollNum, password };
       setGuestLoader(true);
       dispatch(loginUser(fields, role));
     } else if (role === "Teacher") {
@@ -133,35 +128,20 @@ const LoginPage = ({ role }) => {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {role === "Student" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="rollNumber">ID Number</Label>
-                    <Input
-                      id="rollNumber"
-                      name="rollNumber"
-                      type="number"
-                      placeholder="Enter your ID Number"
-                      className={emailError ? "border-red-500" : ""}
-                      onChange={handleInputChange}
-                    />
-                    {rollNumberError && (
-                      <p className="text-sm text-red-500">ID Number is required</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="studentName">Name</Label>
-                    <Input
-                      id="studentName"
-                      name="studentName"
-                      placeholder="Enter your name"
-                      className={studentNameError ? "border-red-500" : ""}
-                      onChange={handleInputChange}
-                    />
-                    {studentNameError && (
-                      <p className="text-sm text-red-500">Name is required</p>
-                    )}
-                  </div>
-                </>
+                <div className="space-y-2">
+                  <Label htmlFor="rollNumber">ID Number</Label>
+                  <Input
+                    id="rollNumber"
+                    name="rollNumber"
+                    type="text"
+                    placeholder="Enter your ID Number"
+                    className={rollNumberError ? "border-red-500" : ""}
+                    onChange={handleInputChange}
+                  />
+                  {rollNumberError && (
+                    <p className="text-sm text-red-500">ID Number is required</p>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>

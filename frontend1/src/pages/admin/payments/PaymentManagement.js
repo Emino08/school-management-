@@ -8,7 +8,7 @@ import FeeStructures from './FeeStructures';
 import RecordPayment from './RecordPayment';
 import PaymentHistory from './PaymentHistory';
 import InvoiceManagement from './InvoiceManagement';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 
 const PaymentManagement = () => {
@@ -38,13 +38,12 @@ const PaymentManagement = () => {
       const response = await axios.get(
         `${import.meta.env.VITE_API_BASE_URL}/reports/financial-overview`,
         {
-          params: { academic_year_id: currentAcademicYear.id },
-          headers: { Authorization: `Bearer ${token}` }
+          params: { academic_year_id: currentAcademicYear.id }
         }
       );
 
       if (response.data.success) {
-        const overview = response.data.overview;
+        const overview = response.data.overview || response.data.data || {};
         setStats({
           totalCollected: overview.collected_revenue || 0,
           totalOutstanding: overview.outstanding_balance || 0,

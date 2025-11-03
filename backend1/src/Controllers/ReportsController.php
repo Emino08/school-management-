@@ -301,9 +301,22 @@ class ReportsController
     // ======= FINANCIAL REPORTS =======
 
     // Get financial overview
-    public function getFinancialOverview($academicYearId, $term = null)
+    public function getFinancialOverview($request, $response)
     {
         try {
+            // Get query parameters
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+            $term = $queryParams['term'] ?? null;
+
+            if (!$academicYearId) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Academic year ID is required'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+
             // Total expected revenue (from invoices)
             $sqlExpected = "
                 SELECT COALESCE(SUM(total_amount), 0) as expected_revenue
@@ -322,20 +335,24 @@ class ReportsController
             $stmtExpected->execute($params);
             $expectedRevenue = $stmtExpected->fetchColumn();
 
-            // Total collected revenue
-            $sqlCollected = "
-                SELECT COALESCE(SUM(amount_paid), 0) as collected_revenue
-                FROM payments
-                WHERE academic_year_id = :academic_year_id
-                AND status = 'Completed'
-            ";
-
+            // Total collected revenue (fees_payments)
+            $sqlCollected = "SELECT COALESCE(SUM(amount), 0) as collected_revenue
+                             FROM fees_payments
+                             WHERE academic_year_id = :academic_year_id
+                             AND status IN ('paid','partial')";
+            $paramsCollected = [':academic_year_id' => $academicYearId];
             if ($term) {
+                $termMap = [
+                    '1' => '1st Term',
+                    '2' => '2nd Term',
+                    '3' => 'Full Year',
+                ];
+                $termVal = $termMap[$term] ?? $term;
                 $sqlCollected .= " AND term = :term";
+                $paramsCollected[':term'] = $termVal;
             }
-
             $stmtCollected = $this->db->prepare($sqlCollected);
-            $stmtCollected->execute($params);
+            $stmtCollected->execute($paramsCollected);
             $collectedRevenue = $stmtCollected->fetchColumn();
 
             // Outstanding balance
@@ -354,25 +371,21 @@ class ReportsController
             $stmtOutstanding->execute($params);
             $outstandingBalance = $stmtOutstanding->fetchColumn();
 
-            // Payment method breakdown
-            $sqlMethods = "
-                SELECT
-                    payment_method,
-                    COUNT(*) as transaction_count,
-                    SUM(amount_paid) as total_amount
-                FROM payments
-                WHERE academic_year_id = :academic_year_id
-                AND status = 'Completed'
-            ";
-
+            // Payment method breakdown (fees_payments)
+            $sqlMethods = "SELECT payment_method, COUNT(*) as transaction_count, SUM(amount) as total_amount
+                           FROM fees_payments
+                           WHERE academic_year_id = :academic_year_id
+                           AND status IN ('paid','partial')";
+            $paramsMethods = [':academic_year_id' => $academicYearId];
             if ($term) {
+                $termMap = [ '1' => '1st Term', '2' => '2nd Term', '3' => 'Full Year' ];
+                $termVal = $termMap[$term] ?? $term;
                 $sqlMethods .= " AND term = :term";
+                $paramsMethods[':term'] = $termVal;
             }
-
             $sqlMethods .= " GROUP BY payment_method";
-
             $stmtMethods = $this->db->prepare($sqlMethods);
-            $stmtMethods->execute($params);
+            $stmtMethods->execute($paramsMethods);
             $paymentMethods = $stmtMethods->fetchAll(PDO::FETCH_ASSOC);
 
             // Invoice status breakdown
@@ -396,7 +409,7 @@ class ReportsController
             $stmtInvoices->execute($params);
             $invoiceStatus = $stmtInvoices->fetchAll(PDO::FETCH_ASSOC);
 
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => true,
                 'overview' => [
                     'expected_revenue' => $expectedRevenue,
@@ -406,12 +419,14 @@ class ReportsController
                     'payment_methods' => $paymentMethods,
                     'invoice_status' => $invoiceStatus
                 ]
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
         } catch (PDOException $e) {
-            return [
+            $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Error fetching financial overview: ' . $e->getMessage()
-            ];
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 
@@ -586,6 +601,277 @@ class ReportsController
                 'success' => false,
                 'message' => 'Error fetching dashboard stats: ' . $e->getMessage()
             ];
+        }
+    }
+
+    // ======= PSR-7 ROUTE HANDLERS =======
+
+    /**
+     * Get overview report (combines all key metrics)
+     */
+    public function getOverview($request, $response)
+    {
+        try {
+            $user = $request->getAttribute('user');
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+
+            if (!$academicYearId) {
+                // Get current academic year
+                $stmt = $this->db->query("SELECT id FROM academic_years WHERE is_current = 1 LIMIT 1");
+                $academicYearId = $stmt->fetchColumn();
+
+                if (!$academicYearId) {
+                    // No academic year found, return empty stats
+                    $response->getBody()->write(json_encode([
+                        'success' => true,
+                        'stats' => [
+                            'total_students' => 0,
+                            'total_teachers' => 0,
+                            'total_classes' => 0,
+                            'recent_payments' => 0,
+                            'average_attendance' => 0,
+                            'pending_complaints' => 0
+                        ]
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json');
+                }
+            }
+
+            $dashboardStats = $this->getDashboardStats($academicYearId);
+
+            // Normalize shape to { success, data }
+            if (isset($dashboardStats['stats'])) {
+                $payload = [
+                    'success' => true,
+                    'data' => $dashboardStats['stats']
+                ];
+            } else {
+                $payload = [
+                    'success' => (bool)($dashboardStats['success'] ?? true),
+                    'data' => $dashboardStats
+                ];
+            }
+
+            $response->getBody()->write(json_encode($payload));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Error fetching overview: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Get academic report (performance data)
+     */
+    public function getAcademicReport($request, $response)
+    {
+        try {
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+            $term = $queryParams['term'] ?? null;
+            $classId = $queryParams['class_id'] ?? null;
+
+            if (!$academicYearId) {
+                $stmt = $this->db->query("SELECT id FROM academic_years WHERE is_current = 1 LIMIT 1");
+                $academicYearId = $stmt->fetchColumn();
+            }
+
+            $classPerformance = $this->getClassPerformance($academicYearId, $term);
+            $subjectPerformance = $this->getSubjectPerformance($academicYearId, $term, $classId);
+            $topPerformers = $this->getTopPerformers($academicYearId, $term, $classId);
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'data' => [
+                    'class_performance' => $classPerformance['performance'] ?? [],
+                    'subject_performance' => $subjectPerformance['performance'] ?? [],
+                    'top_performers' => $topPerformers['topPerformers'] ?? []
+                ]
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Error fetching academic report: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Get financial report (wrapper for getFinancialOverview)
+     */
+    public function getFinancialReport($request, $response)
+    {
+        // Delegate but normalize the JSON shape to { success, data }
+        try {
+            // Recompute overview here to control shape
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+            $term = $queryParams['term'] ?? null;
+
+            if (!$academicYearId) {
+                $stmt = $this->db->query("SELECT id FROM academic_years WHERE is_current = 1 LIMIT 1");
+                $academicYearId = $stmt->fetchColumn();
+            }
+
+            // Reuse core of getFinancialOverview, but capture as array
+            // Total expected revenue (from invoices)
+            $sqlExpected = "SELECT COALESCE(SUM(total_amount), 0) as expected_revenue FROM invoices WHERE academic_year_id = :academic_year_id";
+            $stmtExpected = $this->db->prepare($sqlExpected);
+            $stmtExpected->execute([':academic_year_id' => $academicYearId]);
+            $expectedRevenue = (float)$stmtExpected->fetchColumn();
+
+            // Collected revenue
+            $sqlCollected = "SELECT COALESCE(SUM(amount), 0) as collected_revenue FROM fees_payments WHERE academic_year_id = :academic_year_id AND status IN ('paid','partial')";
+            $stmtCollected = $this->db->prepare($sqlCollected);
+            $stmtCollected->execute([':academic_year_id' => $academicYearId]);
+            $collectedRevenue = (float)$stmtCollected->fetchColumn();
+
+            // Outstanding balance
+            $sqlOutstanding = "SELECT COALESCE(SUM(balance), 0) as outstanding_balance FROM invoices WHERE academic_year_id = :academic_year_id";
+            $stmtOutstanding = $this->db->prepare($sqlOutstanding);
+            $stmtOutstanding->execute([':academic_year_id' => $academicYearId]);
+            $outstandingBalance = (float)$stmtOutstanding->fetchColumn();
+
+            // Payment methods breakdown
+            $sqlPaymentMethods = "SELECT payment_method, COUNT(*) as count, SUM(amount) as total_amount FROM fees_payments WHERE academic_year_id = :academic_year_id GROUP BY payment_method";
+            $stmtMethods = $this->db->prepare($sqlPaymentMethods);
+            $stmtMethods->execute([':academic_year_id' => $academicYearId]);
+            $paymentMethods = $stmtMethods->fetchAll(PDO::FETCH_ASSOC);
+
+            // Invoice status breakdown
+            $sqlInvoices = "SELECT status, COUNT(*) as count, SUM(total_amount) as total_amount, SUM(balance) as total_balance FROM invoices WHERE academic_year_id = :academic_year_id";
+            $params = [':academic_year_id' => $academicYearId];
+            if ($term) { $sqlInvoices .= " AND term = :term"; $params[':term'] = $term; }
+            $sqlInvoices .= " GROUP BY status";
+            $stmtInvoices = $this->db->prepare($sqlInvoices);
+            $stmtInvoices->execute($params);
+            $invoiceStatus = $stmtInvoices->fetchAll(PDO::FETCH_ASSOC);
+
+            $payload = [
+                'success' => true,
+                'data' => [
+                    'expected_revenue' => $expectedRevenue,
+                    'collected_revenue' => $collectedRevenue,
+                    'outstanding_balance' => $outstandingBalance,
+                    'collection_rate' => $expectedRevenue > 0 ? round(($collectedRevenue / $expectedRevenue) * 100, 2) : 0,
+                    'payment_methods' => $paymentMethods,
+                    'invoice_status' => $invoiceStatus
+                ]
+            ];
+
+            $response->getBody()->write(json_encode($payload));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Error fetching financial report: ' . $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * PSR-7 handler: Fee collection by class
+     */
+    public function getFeeCollection($request, $response)
+    {
+        try {
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+            $term = $queryParams['term'] ?? null;
+
+            if (!$academicYearId) {
+                $stmt = $this->db->query("SELECT id FROM academic_years WHERE is_current = 1 LIMIT 1");
+                $academicYearId = $stmt->fetchColumn();
+                if (!$academicYearId) {
+                    $response->getBody()->write(json_encode([
+                        'success' => true,
+                        'data' => []
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json');
+                }
+            }
+
+            $result = $this->getFeeCollectionByClass($academicYearId, $term);
+            $payload = [
+                'success' => (bool)($result['success'] ?? true),
+                'data' => $result['collection'] ?? []
+            ];
+            $response->getBody()->write(json_encode($payload));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Error fetching fee collection: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Get attendance report
+     */
+    public function getAttendanceReport($request, $response)
+    {
+        try {
+            $queryParams = $request->getQueryParams();
+            $academicYearId = $queryParams['academic_year_id'] ?? null;
+            $startDate = $queryParams['start_date'] ?? null;
+            $endDate = $queryParams['end_date'] ?? null;
+            $classId = $queryParams['class_id'] ?? null;
+
+            if (!$academicYearId) {
+                $stmt = $this->db->query("SELECT id FROM academic_years WHERE is_current = 1 LIMIT 1");
+                $academicYearId = $stmt->fetchColumn();
+            }
+
+            $attendanceSummary = $this->getAttendanceSummary($academicYearId, $startDate, $endDate, $classId);
+
+            // Normalize to { success, data }
+            $payload = [
+                'success' => (bool)($attendanceSummary['success'] ?? true),
+                'data' => $attendanceSummary['summary'] ?? []
+            ];
+
+            $response->getBody()->write(json_encode($payload));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Error fetching attendance report: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Export report to PDF/CSV
+     */
+    public function exportReport($request, $response, $args)
+    {
+        try {
+            $type = $args['type'] ?? 'overview';
+            $queryParams = $request->getQueryParams();
+            $format = $queryParams['format'] ?? 'pdf';
+
+            // For now, return a placeholder response
+            // This would normally generate a PDF or CSV file
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Export functionality coming soon',
+                'type' => $type,
+                'format' => $format
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Error exporting report: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 }

@@ -10,6 +10,7 @@ use App\Models\Teacher;
 use App\Models\ClassModel;
 use App\Utils\JWT;
 use App\Utils\Validator;
+use App\Utils\Cache;
 
 class AdminController
 {
@@ -197,6 +198,33 @@ class AdminController
         $user = $request->getAttribute('user');
 
         try {
+            $cache = new Cache();
+            $cacheKey = 'dashboard_stats_' . $user->id;
+
+            // Cache dashboard stats for 5 minutes (300 seconds)
+            $stats = $cache->remember($cacheKey, 300, function() use ($user) {
+                return $this->calculateDashboardStats($user);
+            });
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'stats' => $stats,
+                'cached' => $cache->has($cacheKey, 300)
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to fetch stats: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    private function calculateDashboardStats($user)
+    {
+        try {
+            $db = \App\Config\Database::getInstance()->getConnection();
             $stats = [
                 'total_students' => $this->studentModel->count(['admin_id' => $user->id]),
                 'total_teachers' => $this->teacherModel->count(['admin_id' => $user->id]),
@@ -251,35 +279,141 @@ class AdminController
             $subStmt->execute([':admin' => $user->id]);
             $stats['total_subjects'] = (int)($subStmt->fetch(\PDO::FETCH_ASSOC)['c'] ?? 0);
 
-            // Fees quick stats (current year)
+            // Enhanced Fees stats (current year)
             if ($yearId) {
-                $feesStmt = $db->prepare("SELECT 
-                            COUNT(*) as total_payments,
-                            COALESCE(SUM(amount),0) as total_amount
+                // Get fee structure total and collected amount
+                $feesStmt = $db->prepare("SELECT
+                            COALESCE(SUM(fp.amount),0) as total_collected,
+                            COUNT(DISTINCT fp.student_id) as students_paid
                         FROM fees_payments fp
                         INNER JOIN students s ON fp.student_id = s.id
                         WHERE s.admin_id = :admin AND fp.academic_year_id = :year");
                 $feesStmt->execute([':admin' => $user->id, ':year' => $yearId]);
-                $fees = $feesStmt->fetch(\PDO::FETCH_ASSOC) ?: ['total_payments'=>0,'total_amount'=>0];
+                $fees = $feesStmt->fetch(\PDO::FETCH_ASSOC) ?: ['total_collected'=>0,'students_paid'=>0];
+
+                // Get expected amount from fee structures if table exists
+                $expectedAmount = 0;
+                try {
+                    $expectedStmt = $db->prepare("SELECT COALESCE(SUM(fs.amount),0) as expected
+                                                   FROM fee_structures fs
+                                                   WHERE fs.academic_year_id = :year");
+                    $expectedStmt->execute([':year' => $yearId]);
+                    $expected = $expectedStmt->fetch(\PDO::FETCH_ASSOC);
+                    $expectedAmount = (float)($expected['expected'] ?? 0);
+                } catch (\Exception $e) {
+                    // fee_structures table might not exist, use student count estimation
+                    $expectedAmount = $stats['total_students'] * 50000; // fallback estimation
+                }
+
+                $totalCollected = (float)$fees['total_collected'];
+                $totalPending = max(0, $expectedAmount - $totalCollected);
+                $collectionRate = $expectedAmount > 0 ? round(($totalCollected / $expectedAmount) * 100, 2) : 0;
+
+                // Get current month payments
+                $monthStart = date('Y-m-01');
+                $monthEnd = date('Y-m-t');
+                $monthStmt = $db->prepare("SELECT COALESCE(SUM(amount),0) as month_total
+                                          FROM fees_payments fp
+                                          INNER JOIN students s ON fp.student_id = s.id
+                                          WHERE s.admin_id = :admin
+                                            AND fp.academic_year_id = :year
+                                            AND fp.payment_date BETWEEN :start AND :end");
+                $monthStmt->execute([':admin' => $user->id, ':year' => $yearId, ':start' => $monthStart, ':end' => $monthEnd]);
+                $monthData = $monthStmt->fetch(\PDO::FETCH_ASSOC);
+
                 $stats['fees'] = [
-                    'total_payments' => (int)$fees['total_payments'],
-                    'total_amount' => (float)$fees['total_amount']
+                    'total_collected' => $totalCollected,
+                    'total_pending' => $totalPending,
+                    'collection_rate' => $collectionRate,
+                    'this_month' => (float)($monthData['month_total'] ?? 0),
+                    'students_paid' => (int)$fees['students_paid'],
+                    'total_expected' => $expectedAmount
                 ];
             } else {
-                $stats['fees'] = [ 'total_payments' => 0, 'total_amount' => 0.0 ];
+                $stats['fees'] = [
+                    'total_collected' => 0,
+                    'total_pending' => 0,
+                    'collection_rate' => 0,
+                    'this_month' => 0,
+                    'students_paid' => 0,
+                    'total_expected' => 0
+                ];
             }
 
-            $response->getBody()->write(json_encode([
-                'success' => true,
-                'stats' => $stats
-            ]));
-            return $response->withHeader('Content-Type', 'application/json');
+            // Results stats (current year)
+            $stats['results'] = ['published' => 0, 'pending' => 0, 'total' => 0];
+            if ($yearId) {
+                try {
+                    $resultsStmt = $db->prepare("SELECT
+                                COUNT(*) as total,
+                                SUM(CASE WHEN is_published = 1 THEN 1 ELSE 0 END) as published,
+                                SUM(CASE WHEN is_published = 0 THEN 1 ELSE 0 END) as pending
+                            FROM exams e
+                            WHERE e.admin_id = :admin AND e.academic_year_id = :year");
+                    $resultsStmt->execute([':admin' => $user->id, ':year' => $yearId]);
+                    $results = $resultsStmt->fetch(\PDO::FETCH_ASSOC);
+                    $stats['results'] = [
+                        'total' => (int)($results['total'] ?? 0),
+                        'published' => (int)($results['published'] ?? 0),
+                        'pending' => (int)($results['pending'] ?? 0)
+                    ];
+                } catch (\Exception $e) {
+                    // Table might not exist, keep defaults
+                }
+            }
+
+            // Notices stats (active = future or today)
+            try {
+                $noticesStmt = $db->prepare("SELECT
+                            COUNT(*) as total,
+                            SUM(CASE WHEN date >= CURDATE() THEN 1 ELSE 0 END) as active,
+                            SUM(CASE WHEN DATEDIFF(CURDATE(), created_at) <= 7 THEN 1 ELSE 0 END) as recent
+                        FROM notices WHERE admin_id = :admin");
+                $noticesStmt->execute([':admin' => $user->id]);
+                $notices = $noticesStmt->fetch(\PDO::FETCH_ASSOC);
+                $stats['notices'] = [
+                    'total' => (int)($notices['total'] ?? 0),
+                    'active' => (int)($notices['active'] ?? 0),
+                    'recent' => (int)($notices['recent'] ?? 0)
+                ];
+            } catch (\Exception $e) {
+                $stats['notices'] = ['total' => 0, 'active' => 0, 'recent' => 0];
+            }
+
+            // Complaints stats
+            try {
+                $complaintsStmt = $db->prepare("SELECT
+                            COUNT(*) as total,
+                            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                            SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+                            SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved
+                        FROM complaints WHERE admin_id = :admin");
+                $complaintsStmt->execute([':admin' => $user->id]);
+                $complaints = $complaintsStmt->fetch(\PDO::FETCH_ASSOC);
+                $stats['complaints'] = [
+                    'total' => (int)($complaints['total'] ?? 0),
+                    'pending' => (int)($complaints['pending'] ?? 0),
+                    'in_progress' => (int)($complaints['in_progress'] ?? 0),
+                    'resolved' => (int)($complaints['resolved'] ?? 0)
+                ];
+            } catch (\Exception $e) {
+                $stats['complaints'] = ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'resolved' => 0];
+            }
+
+            return $stats;
         } catch (\Exception $e) {
-            $response->getBody()->write(json_encode([
-                'success' => false,
-                'message' => 'Failed to fetch stats: ' . $e->getMessage()
-            ]));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            // Return empty stats on error
+            return [
+                'total_students' => 0,
+                'total_teachers' => 0,
+                'total_classes' => 0,
+                'total_subjects' => 0,
+                'attendance' => ['date' => date('Y-m-d'), 'present' => 0, 'absent' => 0, 'late' => 0, 'excused' => 0, 'total_records' => 0, 'distinct_students_marked' => 0, 'attendance_rate' => 0],
+                'fees' => ['total_collected' => 0, 'total_pending' => 0, 'collection_rate' => 0, 'this_month' => 0, 'students_paid' => 0, 'total_expected' => 0],
+                'results' => ['published' => 0, 'pending' => 0, 'total' => 0],
+                'notices' => ['total' => 0, 'active' => 0, 'recent' => 0],
+                'complaints' => ['total' => 0, 'pending' => 0, 'in_progress' => 0, 'resolved' => 0]
+            ];
         }
     }
 
@@ -326,6 +460,33 @@ class AdminController
         $term = $params['term'] ?? null; // For fees
         $attDate = $params['date'] ?? null; // For attendance_by_class
 
+        try {
+            $cache = new Cache();
+            // Create cache key based on user and filter parameters
+            $cacheKey = 'dashboard_charts_' . $user->id . '_' . md5(json_encode($params));
+
+            // Cache dashboard charts for 10 minutes (600 seconds)
+            $charts = $cache->remember($cacheKey, 600, function() use ($user, $days, $start, $end, $term, $attDate) {
+                return $this->calculateDashboardCharts($user, $days, $start, $end, $term, $attDate);
+            });
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'charts' => $charts,
+                'cached' => $cache->has($cacheKey, 600)
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to fetch charts: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    private function calculateDashboardCharts($user, $days, $start, $end, $term, $attDate)
+    {
         try {
             $db = \App\Config\Database::getInstance()->getConnection();
 
@@ -475,26 +636,28 @@ class AdminController
                 }
             }
 
-            $response->getBody()->write(json_encode([
-                'success' => true,
-                'charts' => [
-                    'attendance_trend' => $attendanceTrend,
-                    'class_student_counts' => $classStudentCounts,
-                    'fees_trend' => $feesTrend,
-                    'results_publications' => $resultsPublications,
-                    'teacher_load' => $teacherLoad,
-                    'fees_by_term' => $feesByTerm,
-                    'attendance_by_class' => $attendanceByClass,
-                    'avg_grades_trend' => $avgGradesTrend
-                ]
-            ]));
-            return $response->withHeader('Content-Type', 'application/json');
+            return [
+                'attendance_trend' => $attendanceTrend,
+                'class_student_counts' => $classStudentCounts,
+                'fees_trend' => $feesTrend,
+                'results_publications' => $resultsPublications,
+                'teacher_load' => $teacherLoad,
+                'fees_by_term' => $feesByTerm,
+                'attendance_by_class' => $attendanceByClass,
+                'avg_grades_trend' => $avgGradesTrend
+            ];
         } catch (\Exception $e) {
-            $response->getBody()->write(json_encode([
-                'success' => false,
-                'message' => 'Failed to fetch charts: ' . $e->getMessage()
-            ]));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            // Return empty charts on error
+            return [
+                'attendance_trend' => [],
+                'class_student_counts' => [],
+                'fees_trend' => [],
+                'results_publications' => [],
+                'teacher_load' => [],
+                'fees_by_term' => [],
+                'attendance_by_class' => [],
+                'avg_grades_trend' => []
+            ];
         }
     }
 }

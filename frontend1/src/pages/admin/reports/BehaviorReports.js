@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 
 const BehaviorReports = () => {

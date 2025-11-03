@@ -12,6 +12,8 @@ const EditClassModal = ({ open, onOpenChange, classData, onSuccess }) => {
   const [className, setClassName] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [section, setSection] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [placementMinAvg, setPlacementMinAvg] = useState('');
   const [saving, setSaving] = useState(false);
 
   const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
@@ -21,6 +23,12 @@ const EditClassModal = ({ open, onOpenChange, classData, onSuccess }) => {
       setClassName(classData.class_name || '');
       setGradeLevel(classData.grade_level?.toString() || '');
       setSection(classData.section || '');
+      setCapacity(classData.capacity?.toString() || '');
+      setPlacementMinAvg(
+        classData.placement_min_average !== undefined && classData.placement_min_average !== null
+          ? classData.placement_min_average.toString()
+          : ''
+      );
     }
   }, [open, classData]);
 
@@ -34,6 +42,8 @@ const EditClassModal = ({ open, onOpenChange, classData, onSuccess }) => {
         class_name: className,
         grade_level: gradeLevel === '' ? undefined : parseInt(gradeLevel, 10),
         section: section || undefined,
+        capacity: capacity === '' ? undefined : parseInt(capacity, 10),
+        placement_min_average: placementMinAvg === '' ? undefined : parseFloat(placementMinAvg),
       };
 
       await axios.put(`${API_URL}/classes/${classData.id}`, payload, {
@@ -74,6 +84,16 @@ const EditClassModal = ({ open, onOpenChange, classData, onSuccess }) => {
               <Input id="section" value={section} onChange={(e) => setSection(e.target.value)} />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="capacity">Capacity (optional)</Label>
+              <Input id="capacity" type="number" min="0" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="placement">Min Average for Placement</Label>
+              <Input id="placement" type="number" step="0.01" min="0" max="100" value={placementMinAvg} onChange={(e) => setPlacementMinAvg(e.target.value)} />
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
@@ -85,4 +105,3 @@ const EditClassModal = ({ open, onOpenChange, classData, onSuccess }) => {
 };
 
 export default EditClassModal;
-

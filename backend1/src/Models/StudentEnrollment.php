@@ -106,8 +106,8 @@ class StudentEnrollment extends BaseModel
 
             // Determine promotion
             if ($average >= $passingPercentage) {
-                // Find next class
-                $nextClass = $this->getNextClass($enrollment['class_id']);
+                // Find next class based on principal thresholds (placement_min_average)
+                $nextClass = $this->getNextClassByAverage($enrollment['class_id'], $average);
 
                 if ($nextClass) {
                     $this->updateEnrollmentStatus(
@@ -143,17 +143,29 @@ class StudentEnrollment extends BaseModel
         ];
     }
 
-    private function getNextClass($currentClassId)
+    private function getNextClassByAverage($currentClassId, $studentAverage)
     {
         $sql = "SELECT c2.*
                 FROM classes c1
                 INNER JOIN classes c2 ON c1.admin_id = c2.admin_id
                 WHERE c1.id = :current_class_id
                   AND c2.grade_level = c1.grade_level + 1
-                LIMIT 1";
+                ORDER BY COALESCE(c2.placement_min_average, 0) DESC, c2.id ASC";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':current_class_id' => $currentClassId]);
-        return $stmt->fetch();
+        $destClasses = $stmt->fetchAll();
+
+        if (empty($destClasses)) {
+            return null;
+        }
+
+        foreach ($destClasses as $cls) {
+            $min = isset($cls['placement_min_average']) ? (float)$cls['placement_min_average'] : 0.0;
+            if ($studentAverage >= $min) {
+                return $cls;
+            }
+        }
+        return end($destClasses);
     }
 }

@@ -187,6 +187,9 @@ class AcademicYearController
         $passingPercentage = $data['passing_percentage'] ?? 40;
 
         try {
+            // Ensure placement/capacity columns exist for downstream queries
+            $db = \App\Config\Database::getInstance()->getConnection();
+            \App\Utils\Schema::ensureClassCapacityColumns($db);
             $result = $this->enrollmentModel->promoteStudents($args['id'], $passingPercentage);
 
             $response->getBody()->write(json_encode([
@@ -204,6 +207,9 @@ class AcademicYearController
     public function completeYear(Request $request, Response $response, $args)
     {
         try {
+            // Ensure placement/capacity columns exist for downstream queries
+            $db = \App\Config\Database::getInstance()->getConnection();
+            \App\Utils\Schema::ensureClassCapacityColumns($db);
             // First promote students
             $result = $this->enrollmentModel->promoteStudents($args['id']);
 

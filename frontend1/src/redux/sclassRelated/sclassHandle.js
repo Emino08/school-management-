@@ -54,7 +54,9 @@ export const getClassSubjects = (classId, teacherId) => async (dispatch) => {
         if (result.data.message) {
             dispatch(getFailedTwo(result.data.message));
         } else {
-            dispatch(getClassSubject(result.data));
+            // Extract the subjects array from the response
+            const subjects = result.data.subjects || result.data;
+            dispatch(getClassSubject(subjects));
         }
     } catch (error) {
         dispatch(getError(error.message));
@@ -69,7 +71,9 @@ export const getClassDetails = (id, address) => async (dispatch) => {
         let url = `${import.meta.env.VITE_API_BASE_URL}/classes/${id}`;
         const result = await axios.get(url);
         if (result.data) {
-            dispatch(detailsSuccess(result.data));
+            // Extract the class details from the response
+            const classData = result.data.class || result.data;
+            dispatch(detailsSuccess(classData));
         }
     } catch (error) {
         dispatch(getError(error));
@@ -93,7 +97,9 @@ export const getSubjectList = (id, address) => async (dispatch) => {
         if (result.data.message) {
             dispatch(getFailed(result.data.message));
         } else {
-            dispatch(getSubjectsSuccess(result.data));
+            // Extract the subjects array from the response
+            const subjects = result.data.subjects || result.data;
+            dispatch(getSubjectsSuccess(subjects));
         }
     } catch (error) {
         dispatch(getError(error));
@@ -108,7 +114,9 @@ export const getTeacherFreeClassSubjects = (id) => async (dispatch) => {
         if (result.data.message) {
             dispatch(getFailed(result.data.message));
         } else {
-            dispatch(getSubjectsSuccess(result.data));
+            // Extract the subjects array from the response
+            const subjects = result.data.subjects || result.data;
+            dispatch(getSubjectsSuccess(subjects));
         }
     } catch (error) {
         dispatch(getError(error));

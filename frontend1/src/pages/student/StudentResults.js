@@ -18,10 +18,15 @@ const StudentResults = () => {
     }, []);
 
     const fetchStudentResults = async () => {
+        if (!currentUser?._id) {
+            setLoading(false);
+            return;
+        }
+
         try {
             setLoading(true);
             const response = await axios.get(
-                `${import.meta.env.VITE_API_BASE_URL}/results/student/${currentUser.id}`
+                `${import.meta.env.VITE_API_BASE_URL}/results/student/${currentUser._id}`
             );
 
             if (response.data.success) {
@@ -36,9 +41,13 @@ const StudentResults = () => {
     };
 
     const fetchExamResults = async (examId) => {
+        if (!currentUser?._id) {
+            return;
+        }
+
         try {
             const response = await axios.get(
-                `${import.meta.env.VITE_API_BASE_URL}/results/student/${currentUser.id}/exam/${examId}`
+                `${import.meta.env.VITE_API_BASE_URL}/results/student/${currentUser._id}/exam/${examId}`
             );
 
             if (response.data.success) {

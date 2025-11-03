@@ -6,8 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FiPlus, FiEdit2, FiTrash2, FiDollarSign } from 'react-icons/fi';
-import axios from 'axios';
+import { FiPlus, FiEdit2, FiTrash2, FiDollarSign, FiUpload } from 'react-icons/fi';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 
 const FeeStructures = () => {
@@ -18,10 +18,12 @@ const FeeStructures = () => {
   const [editingFee, setEditingFee] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [feeToDelete, setFeeToDelete] = useState(null);
+  const [currentYear, setCurrentYear] = useState(null);
+  const [lockTuitionPreset, setLockTuitionPreset] = useState(false);
 
   const [formData, setFormData] = useState({
     fee_name: '',
-    class_id: '',
+    class_id: 'all',
     amount: '',
     frequency: 'Termly',
     description: '',
@@ -31,6 +33,8 @@ const FeeStructures = () => {
   useEffect(() => {
     fetchFeeStructures();
     fetchClasses();
+    const cy = JSON.parse(localStorage.getItem('currentAcademicYear'));
+    if (cy) setCurrentYear(cy);
   }, []);
 
   const fetchFeeStructures = async () => {
@@ -41,8 +45,7 @@ const FeeStructures = () => {
       const response = await axios.get(
         `${import.meta.env.VITE_API_BASE_URL}/fee-structures`,
         {
-          params: { academic_year_id: currentAcademicYear?.id },
-          headers: { Authorization: `Bearer ${token}` }
+          params: { academic_year_id: currentAcademicYear?.id }
         }
       );
 
@@ -61,8 +64,7 @@ const FeeStructures = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/classes`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${import.meta.env.VITE_API_BASE_URL}/classes`
       );
 
       if (response.data.success) {
@@ -82,7 +84,7 @@ const FeeStructures = () => {
 
       const payload = {
         ...formData,
-        class_id: formData.class_id || null,
+        class_id: formData.class_id && formData.class_id !== 'all' ? formData.class_id : null,
         academic_year_id: currentAcademicYear.id
       };
 
@@ -90,16 +92,14 @@ const FeeStructures = () => {
         // Update
         await axios.put(
           `${import.meta.env.VITE_API_BASE_URL}/fee-structures/${editingFee.id}`,
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } }
+          payload
         );
         toast.success('Fee structure updated successfully');
       } else {
         // Create
         await axios.post(
           `${import.meta.env.VITE_API_BASE_URL}/fee-structures`,
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } }
+          payload
         );
         toast.success('Fee structure created successfully');
       }
@@ -116,7 +116,7 @@ const FeeStructures = () => {
     setEditingFee(fee);
     setFormData({
       fee_name: fee.fee_name,
-      class_id: fee.class_id || '',
+      class_id: fee.class_id ? fee.class_id.toString() : 'all',
       amount: fee.amount,
       frequency: fee.frequency,
       description: fee.description || '',
@@ -129,8 +129,7 @@ const FeeStructures = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.delete(
-        `${import.meta.env.VITE_API_BASE_URL}/fee-structures/${feeToDelete.id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${import.meta.env.VITE_API_BASE_URL}/fee-structures/${feeToDelete.id}`
       );
 
       toast.success('Fee structure deleted successfully');
@@ -143,10 +142,35 @@ const FeeStructures = () => {
     }
   };
 
+  const importFromAcademicYear = async () => {
+    try {
+      const currentAcademicYear = JSON.parse(localStorage.getItem('currentAcademicYear'));
+      if (!currentAcademicYear?.id) {
+        toast.error('Please select an academic year first');
+        return;
+      }
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_BASE_URL}/fee-structures/import-from-year`,
+        { academic_year_id: currentAcademicYear.id }
+      );
+      if (res.data.success) {
+        const created = res.data.created?.length || 0;
+        const updated = res.data.updated?.length || 0;
+        toast.success(`Imported ${created} and updated ${updated} fee structures`);
+        fetchFeeStructures();
+      } else {
+        toast.error(res.data.message || 'Failed to import defaults');
+      }
+    } catch (error) {
+      console.error('Error importing fee structures:', error);
+      toast.error(error.response?.data?.message || 'Failed to import defaults');
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       fee_name: '',
-      class_id: '',
+      class_id: 'all',
       amount: '',
       frequency: 'Termly',
       description: '',
@@ -156,14 +180,60 @@ const FeeStructures = () => {
     setShowForm(false);
   };
 
+  const applyTermFee = (termNumber) => {
+    if (!currentYear) return;
+    const map = {
+      1: currentYear.term_1_fee,
+      2: currentYear.term_2_fee,
+      3: currentYear.term_3_fee,
+    };
+    const amount = map[termNumber];
+    if (amount !== undefined && amount !== null && amount !== '') {
+      setFormData((prev) => ({
+        ...prev,
+        fee_name: `Tuition Fee - Term ${termNumber}`,
+        amount: amount,
+        frequency: 'Termly',
+        class_id: 'all',
+        is_mandatory: true,
+      }));
+      setLockTuitionPreset(true);
+    }
+  };
+
+  const handleToggleForm = () => {
+    const next = !showForm;
+    setShowForm(next);
+    if (next && !editingFee && currentYear) {
+      // Prefill with Term 1 fee by default when opening create form
+      if (currentYear.term_1_fee) {
+        setFormData((prev) => ({
+          ...prev,
+          fee_name: prev.fee_name || 'Tuition Fee - Term 1',
+          amount: prev.amount || currentYear.term_1_fee,
+          frequency: prev.frequency || 'Termly',
+          class_id: 'all',
+          is_mandatory: true,
+        }));
+        setLockTuitionPreset(true);
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Fee Structures</h2>
-        <Button onClick={() => setShowForm(!showForm)}>
-          <FiPlus className="mr-2 h-4 w-4" />
-          {showForm ? 'Cancel' : 'Add Fee Structure'}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={importFromAcademicYear}>
+            <FiUpload className="mr-2 h-4 w-4" />
+            Import From Academic Year
+          </Button>
+          <Button onClick={handleToggleForm}>
+            <FiPlus className="mr-2 h-4 w-4" />
+            {showForm ? 'Cancel' : 'Add Fee Structure'}
+          </Button>
+        </div>
       </div>
 
       {showForm && (
@@ -196,6 +266,29 @@ const FeeStructures = () => {
                     placeholder="0.00"
                     required
                   />
+                  {currentYear && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                      <span>Quick pick:</span>
+                      {currentYear.term_1_fee ? (
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2"
+                          onClick={() => applyTermFee(1)}>
+                          Term 1 (${parseFloat(currentYear.term_1_fee).toLocaleString()})
+                        </Button>
+                      ) : null}
+                      {currentYear.term_2_fee ? (
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2"
+                          onClick={() => applyTermFee(2)}>
+                          Term 2 (${parseFloat(currentYear.term_2_fee).toLocaleString()})
+                        </Button>
+                      ) : null}
+                      {currentYear.number_of_terms === 3 && currentYear.term_3_fee ? (
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2"
+                          onClick={() => applyTermFee(3)}>
+                          Term 3 (${parseFloat(currentYear.term_3_fee).toLocaleString()})
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -208,7 +301,7 @@ const FeeStructures = () => {
                       <SelectValue placeholder="All Classes" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Classes</SelectItem>
+                      <SelectItem value="all">All Classes</SelectItem>
                       {classes.map((cls) => (
                         <SelectItem key={cls.id} value={cls.id.toString()}>
                           {cls.class_name}
@@ -223,6 +316,7 @@ const FeeStructures = () => {
                   <Select
                     value={formData.frequency}
                     onValueChange={(value) => setFormData({ ...formData, frequency: value })}
+                    disabled={lockTuitionPreset}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -234,6 +328,9 @@ const FeeStructures = () => {
                       <SelectItem value="Yearly">Yearly</SelectItem>
                     </SelectContent>
                   </Select>
+                  {lockTuitionPreset && (
+                    <p className="text-xs text-gray-500">Frequency locked to Termly for tuition preset.</p>
+                  )}
                 </div>
 
                 <div className="space-y-2 md:col-span-2">

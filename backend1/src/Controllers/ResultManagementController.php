@@ -26,8 +26,8 @@ class ResultManagementController
         try {
             $sql = "SELECT
                         r.id,
-                        r.score,
-                        r.submitted_at,
+                        r.marks_obtained as score,
+                        r.created_at as submitted_at,
                         s.name as student_name,
                         s.id as student_id,
                         sub.subject_name,
@@ -39,9 +39,9 @@ class ResultManagementController
                     FROM exam_results r
                     INNER JOIN students s ON r.student_id = s.id
                     INNER JOIN exams e ON r.exam_id = e.id
-                    INNER JOIN subjects sub ON e.subject_id = sub.id
-                    LEFT JOIN teachers t ON r.teacher_id = t.id
-                    WHERE r.status = 'pending'
+                    INNER JOIN subjects sub ON r.subject_id = sub.id
+                    LEFT JOIN teachers t ON r.uploaded_by_teacher_id = t.id
+                    WHERE r.approval_status = 'pending'
                     AND s.admin_id = :admin_id";
 
             $params = [':admin_id' => $user->id];
@@ -56,7 +56,7 @@ class ResultManagementController
                 $params[':subject_id'] = $subjectId;
             }
 
-            $sql .= " ORDER BY r.submitted_at DESC";
+            $sql .= " ORDER BY r.created_at DESC";
 
             $stmt = $this->db->prepare($sql);
             $stmt->execute($params);
@@ -85,7 +85,7 @@ class ResultManagementController
             // Update result status to approved
             $stmt = $this->db->prepare("
                 UPDATE exam_results
-                SET status = 'approved',
+                SET approval_status = 'approved',
                     approved_by = :approved_by,
                     approved_at = NOW()
                 WHERE id = :id
@@ -141,7 +141,7 @@ class ResultManagementController
             // Update result status to rejected
             $stmt = $this->db->prepare("
                 UPDATE exam_results
-                SET status = 'rejected',
+                SET approval_status = 'rejected',
                     rejection_reason = :rejection_reason,
                     rejected_by = :rejected_by,
                     rejected_at = NOW()
@@ -203,7 +203,7 @@ class ResultManagementController
                     INNER JOIN exam_results r ON ur.result_id = r.id
                     INNER JOIN students s ON r.student_id = s.id
                     INNER JOIN exams e ON r.exam_id = e.id
-                    INNER JOIN subjects sub ON e.subject_id = sub.id
+                    INNER JOIN subjects sub ON r.subject_id = sub.id
                     INNER JOIN teachers t ON ur.teacher_id = t.id
                     WHERE ur.status = 'pending'
                     AND s.admin_id = :admin_id
@@ -249,7 +249,7 @@ class ResultManagementController
             // Update the result with new score
             $stmt = $this->db->prepare("
                 UPDATE exam_results
-                SET score = :new_score,
+                SET marks_obtained = :new_score,
                     updated_at = NOW()
                 WHERE id = :result_id
             ");
@@ -378,7 +378,7 @@ class ResultManagementController
 
         try {
             // Get current score
-            $stmt = $this->db->prepare("SELECT score FROM exam_results WHERE id = :id");
+            $stmt = $this->db->prepare("SELECT marks_obtained as score FROM exam_results WHERE id = :id");
             $stmt->execute([':id' => $data['result_id']]);
             $result = $stmt->fetch(\PDO::FETCH_ASSOC);
 

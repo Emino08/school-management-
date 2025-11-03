@@ -109,6 +109,23 @@ class TeacherController
 
             $teacherId = $this->teacherModel->createTeacher($teacherData);
 
+            // Guard: only one class master per class at registration time
+            if ($teacherData['is_class_master'] && $teacherData['class_master_of']) {
+                $db = \App\Config\Database::getInstance()->getConnection();
+                $stmt = $db->prepare("SELECT id, name FROM teachers WHERE admin_id = :admin_id AND is_class_master = 1 AND class_master_of = :class_id");
+                $stmt->execute([':admin_id' => $user->id, ':class_id' => $teacherData['class_master_of']]);
+                $existingMaster = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($existingMaster && (int)$existingMaster['id'] !== (int)$teacherId) {
+                    // Revert role to prevent conflict
+                    $this->teacherModel->update($teacherId, ['is_class_master' => 0, 'class_master_of' => null]);
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => 'Another teacher (' . $existingMaster['name'] . ') is already class master for this class'
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                }
+            }
+
             // Assign subjects if provided (support single 'teachSubject' or array 'teachSubjects')
             $subjects = [];
             if (!empty($data['teachSubjects']) && is_array($data['teachSubjects'])) {
@@ -332,6 +349,24 @@ class TeacherController
             }
             if (!$data['is_class_master']) {
                 $data['class_master_of'] = null;
+            }
+            // Guard: if assigning, ensure no other teacher is master of same class
+            if ($data['is_class_master'] && !empty($data['class_master_of'])) {
+                $db = \App\Config\Database::getInstance()->getConnection();
+                $stmt = $db->prepare("SELECT id, name FROM teachers WHERE admin_id = :admin_id AND is_class_master = 1 AND class_master_of = :class_id AND id <> :teacher_id");
+                $stmt->execute([
+                    ':admin_id' => $user->id,
+                    ':class_id' => (int)$data['class_master_of'],
+                    ':teacher_id' => (int)$args['id']
+                ]);
+                $existing = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($existing) {
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => 'Class already has a master: ' . $existing['name']
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                }
             }
         }
 
@@ -662,6 +697,44 @@ class TeacherController
             }
 
             $db = \App\Config\Database::getInstance()->getConnection();
+
+            // Enforce timetable: ensure this teacher has a scheduled slot for the student's class and subject at this date/time
+            $en = $db->prepare("SELECT class_id FROM student_enrollments WHERE student_id = :sid AND academic_year_id = :yid AND status = 'active' LIMIT 1");
+            $en->execute([':sid' => (int)$data['student_id'], ':yid' => (int)$currentYear['id']]);
+            $enrollment = $en->fetch(\PDO::FETCH_ASSOC);
+            if (!$enrollment) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => 'Student not enrolled for current academic year']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+            $classId = (int)$enrollment['class_id'];
+            $dayOfWeek = date('l', strtotime($data['date']));
+            $time = isset($data['time']) && $data['time'] !== '' ? $data['time'] : date('H:i:s');
+
+            $tt = $db->prepare("SELECT COUNT(*) FROM timetable_entries te
+                                 WHERE te.admin_id = :admin
+                                   AND te.academic_year_id = :yid
+                                   AND te.class_id = :cid
+                                   AND te.subject_id = :sub
+                                   AND te.teacher_id = :tid
+                                   AND te.day_of_week = :dow
+                                   AND te.is_active = 1
+                                   AND :tm BETWEEN te.start_time AND te.end_time");
+            $tt->execute([
+                ':admin' => $user->id,
+                ':yid' => (int)$currentYear['id'],
+                ':cid' => $classId,
+                ':sub' => (int)$subjectId,
+                ':tid' => (int)$teacherId,
+                ':dow' => $dayOfWeek,
+                ':tm' => $time,
+            ]);
+            if ((int)$tt->fetchColumn() === 0) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'No scheduled class for this subject at the specified date/time for this teacher'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
+            }
 
             // Check if attendance already exists for this student, subject, and date
             $stmt = $db->prepare("
@@ -1043,6 +1116,7 @@ class TeacherController
             // Calculate total lessons/sessions
             $totalLessons = 0;
             $subjectIds = [];
+            $numSubjects = count($subjects);
             foreach ($subjects as $subject) {
                 $totalLessons += (int)($subject['sessions'] ?? 0);
                 $subjectIds[] = $subject['id'];
@@ -1051,6 +1125,10 @@ class TeacherController
             // Get number of tests/exams for teacher's subjects
             $numTests = 0;
             $totalHours = 0;
+            $graded = 0;
+            $pendingGrades = 0;
+            $classAverage = null;
+
             if (!empty($subjectIds)) {
                 $placeholders = implode(',', array_fill(0, count($subjectIds), '?'));
 
@@ -1069,13 +1147,37 @@ class TeacherController
 
                 // Calculate total hours (estimate: sessions * 1 hour per session)
                 $totalHours = $totalLessons;
+
+                // Get grading statistics
+                $stmt = $db->prepare("
+                    SELECT
+                        COUNT(*) as total_results,
+                        SUM(CASE WHEN total_score > 0 THEN 1 ELSE 0 END) as graded_count,
+                        SUM(CASE WHEN total_score = 0 OR total_score IS NULL THEN 1 ELSE 0 END) as pending_count,
+                        AVG(CASE WHEN total_score > 0 THEN total_score ELSE NULL END) as avg_score
+                    FROM exam_results er
+                    INNER JOIN exams e ON er.exam_id = e.id
+                    WHERE er.subject_id IN ($placeholders)
+                    AND e.academic_year_id = ?
+                    AND e.is_published = 1
+                ");
+                $stmt->execute($params);
+                $gradingData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+                $graded = (int)($gradingData['graded_count'] ?? 0);
+                $pendingGrades = (int)($gradingData['pending_count'] ?? 0);
+                $classAverage = $gradingData['avg_score'] ? round($gradingData['avg_score'], 2) : null;
             }
 
             $stats = [
                 'students' => $numStudents,
+                'subjects' => $numSubjects,
                 'lessons' => $totalLessons,
                 'tests' => $numTests,
-                'hours' => $totalHours
+                'hours' => $totalHours,
+                'graded' => $graded,
+                'pending_grades' => $pendingGrades,
+                'class_average' => $classAverage
             ];
 
             $response->getBody()->write(json_encode([
@@ -1092,8 +1194,6 @@ class TeacherController
         }
     }
 }
-
-
 
 
 

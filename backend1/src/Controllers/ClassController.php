@@ -130,6 +130,9 @@ class ClassController
         unset($data['id'], $data['admin_id']);
 
         try {
+            // Ensure new placement/capacity columns exist before update
+            $db = \App\Config\Database::getInstance()->getConnection();
+            \App\Utils\Schema::ensureClassCapacityColumns($db);
             $this->classModel->update($args['id'], $data);
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Class updated successfully']));
             return $response->withHeader('Content-Type', 'application/json');

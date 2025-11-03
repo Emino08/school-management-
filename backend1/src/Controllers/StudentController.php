@@ -179,6 +179,31 @@ class StudentController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
         }
 
+        // Get current enrollment and class information
+        $currentYear = $this->academicYearModel->getCurrentYear($student['admin_id']);
+        $classInfo = null;
+
+        if ($currentYear) {
+            $enrollment = $this->enrollmentModel->findOne([
+                'student_id' => $student['id'],
+                'academic_year_id' => $currentYear['id']
+            ]);
+
+            if ($enrollment) {
+                $classInfo = $this->classModel->findById($enrollment['class_id']);
+            }
+        }
+
+        // Add class information to student object (frontend expects 'sclassName' with '_id')
+        if ($classInfo) {
+            $student['sclassName'] = [
+                '_id' => $classInfo['id'],
+                'sclassName' => $classInfo['class_name'],
+                'grade_level' => $classInfo['grade_level'] ?? null,
+                'section' => $classInfo['section'] ?? null
+            ];
+        }
+
         $token = JWT::encode([
             'id' => $student['id'],
             'role' => 'Student',
@@ -191,7 +216,12 @@ class StudentController
             'success' => true,
             'message' => 'Login successful',
             'token' => $token,
-            'student' => $student
+            'student' => $student,
+            '_id' => $student['id'],  // Frontend compatibility
+            'name' => $student['name'],
+            'rollNum' => $student['id_number'],
+            'sclassName' => $student['sclassName'] ?? null,
+            'school' => $student['admin_id']
         ]));
         return $response->withHeader('Content-Type', 'application/json');
     }
@@ -234,6 +264,33 @@ class StudentController
                     'message' => 'Student not found'
                 ]));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+            }
+
+            // Get current enrollment and class information
+            $currentYear = $this->academicYearModel->getCurrentYear($student['admin_id']);
+            $classInfo = null;
+
+            if ($currentYear) {
+                $enrollment = $this->enrollmentModel->findOne([
+                    'student_id' => $student['id'],
+                    'academic_year_id' => $currentYear['id']
+                ]);
+
+                if ($enrollment) {
+                    $classInfo = $this->classModel->findById($enrollment['class_id']);
+                }
+            }
+
+            // Add class information to student object (frontend expects 'sclassName' with '_id')
+            if ($classInfo) {
+                $student['sclassName'] = [
+                    '_id' => $classInfo['id'],
+                    'sclassName' => $classInfo['class_name'],
+                    'grade_level' => $classInfo['grade_level'] ?? null,
+                    'section' => $classInfo['section'] ?? null
+                ];
+                $student['class_id'] = $classInfo['id'];
+                $student['class_name'] = $classInfo['class_name'];
             }
 
             unset($student['password']);
@@ -279,6 +336,138 @@ class StudentController
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Update failed: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    public function getDashboardStats(Request $request, Response $response, $args)
+    {
+        $user = $request->getAttribute('user');
+        $studentId = $user->id;
+
+        try {
+            $db = \App\Config\Database::getInstance()->getConnection();
+
+            // Get student info with class
+            $student = $this->studentModel->findById($studentId);
+            if (!$student) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Student not found'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+            }
+
+            // Get current enrollment
+            $currentYear = $this->academicYearModel->getCurrentYear($student['admin_id']);
+            $classId = null;
+
+            if ($currentYear) {
+                $enrollment = $this->enrollmentModel->findOne([
+                    'student_id' => $studentId,
+                    'academic_year_id' => $currentYear['id']
+                ]);
+                if ($enrollment) {
+                    $classId = $enrollment['class_id'];
+                }
+            }
+
+            // Count subjects (from class enrollment)
+            $subjectsCount = 0;
+            if ($classId) {
+                $stmt = $db->prepare("SELECT COUNT(*) as count FROM subjects WHERE class_id = :class_id");
+                $stmt->execute([':class_id' => $classId]);
+                $subjectsCount = $stmt->fetch(\PDO::FETCH_ASSOC)['count'];
+            }
+
+            // Count exam results (join with exams table to check if published)
+            $stmt = $db->prepare("
+                SELECT COUNT(DISTINCT er.exam_id) as count
+                FROM exam_results er
+                INNER JOIN exams e ON er.exam_id = e.id
+                WHERE er.student_id = :student_id
+                AND e.is_published = 1
+            ");
+            $stmt->execute([':student_id' => $studentId]);
+            $examsCount = $stmt->fetch(\PDO::FETCH_ASSOC)['count'];
+
+            // Get attendance stats
+            $stmt = $db->prepare("
+                SELECT
+                    COUNT(*) as total_records,
+                    SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count
+                FROM attendance
+                WHERE student_id = :student_id
+            ");
+            $stmt->execute([':student_id' => $studentId]);
+            $attendanceData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            $attendancePercentage = 0;
+            if ($attendanceData['total_records'] > 0) {
+                $attendancePercentage = round(($attendanceData['present_count'] / $attendanceData['total_records']) * 100, 2);
+            }
+
+            // Count complaints
+            $stmt = $db->prepare("
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved
+                FROM complaints
+                WHERE user_id = :user_id AND user_type = 'student'
+            ");
+            $stmt->execute([':user_id' => $studentId]);
+            $complaintsData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            // Count notices for student
+            $stmt = $db->prepare("
+                SELECT COUNT(*) as count
+                FROM notices
+                WHERE admin_id = :admin_id
+                AND (target_audience = 'students' OR target_audience = 'all')
+                AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            ");
+            $stmt->execute([':admin_id' => $student['admin_id']]);
+            $noticesCount = $stmt->fetch(\PDO::FETCH_ASSOC)['count'];
+
+            // Get average marks from recent published exams
+            $stmt = $db->prepare("
+                SELECT
+                    AVG(er.total_score) as average_marks,
+                    COUNT(*) as subjects_count
+                FROM exam_results er
+                INNER JOIN exams e ON er.exam_id = e.id
+                WHERE er.student_id = :student_id
+                AND e.is_published = 1
+                ORDER BY er.created_at DESC
+                LIMIT 10
+            ");
+            $stmt->execute([':student_id' => $studentId]);
+            $recentResults = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'stats' => [
+                    'subjects_count' => (int)$subjectsCount,
+                    'exams_count' => (int)$examsCount,
+                    'attendance_percentage' => $attendancePercentage,
+                    'attendance_total' => (int)$attendanceData['total_records'],
+                    'attendance_present' => (int)$attendanceData['present_count'],
+                    'complaints_total' => (int)$complaintsData['total'],
+                    'complaints_pending' => (int)$complaintsData['pending'],
+                    'complaints_resolved' => (int)$complaintsData['resolved'],
+                    'notices_count' => (int)$noticesCount,
+                    'average_marks' => $recentResults['average_marks'] ? round($recentResults['average_marks'], 2) : null,
+                    'class_id' => $classId,
+                    'academic_year_id' => $currentYear['id'] ?? null
+                ]
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to fetch stats: ' . $e->getMessage()
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }

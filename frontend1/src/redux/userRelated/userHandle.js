@@ -38,6 +38,8 @@ export const loginUser = (fields, role) => async (dispatch) => {
                     // Flatten common fields for convenience
                     name: data.admin?.school_name || data.teacher?.name || data.student?.name || data.name,
                     token: data.token || data.admin?.token || data.teacher?.token || data.student?.token,
+                    // Ensure _id is at the root level for all roles
+                    _id: data._id || data.student?.id || data.teacher?.id || data.admin?.id,
                 };
             }
             dispatch(authSuccess(userPayload));

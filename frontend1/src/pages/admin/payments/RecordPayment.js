@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 
 const RecordPayment = ({ onPaymentRecorded }) => {
@@ -30,10 +30,8 @@ const RecordPayment = ({ onPaymentRecorded }) => {
 
   const fetchStudents = async () => {
     try {
-      const token = localStorage.getItem('token');
       const response = await axios.get(
-        `${import.meta.env.VITE_API_BASE_URL}/students`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${import.meta.env.VITE_API_BASE_URL}/students`
       );
 
       if (response.data.success) {
@@ -46,14 +44,12 @@ const RecordPayment = ({ onPaymentRecorded }) => {
 
   const fetchFeeStructures = async () => {
     try {
-      const token = localStorage.getItem('token');
       const currentAcademicYear = JSON.parse(localStorage.getItem('currentAcademicYear'));
 
       const response = await axios.get(
         `${import.meta.env.VITE_API_BASE_URL}/fee-structures`,
         {
-          params: { academic_year_id: currentAcademicYear?.id },
-          headers: { Authorization: `Bearer ${token}` }
+          params: { academic_year_id: currentAcademicYear?.id }
         }
       );
 
@@ -83,8 +79,7 @@ const RecordPayment = ({ onPaymentRecorded }) => {
 
       const response = await axios.post(
         `${import.meta.env.VITE_API_BASE_URL}/payments`,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
+        payload
       );
 
       if (response.data.success) {
@@ -130,11 +125,27 @@ const RecordPayment = ({ onPaymentRecorded }) => {
               <SelectValue placeholder="Select student" />
             </SelectTrigger>
             <SelectContent>
-              {students.map((student) => (
-                <SelectItem key={student.id} value={student.id.toString()}>
-                  {student.first_name} {student.last_name} ({student.admission_no})
-                </SelectItem>
-              ))}
+              {students.filter((s) => s && s.id).map((student) => {
+                const fullName =
+                  (student.name && student.name.trim()) ||
+                  [student.first_name, student.last_name].filter(Boolean).join(' ') ||
+                  student.student_name ||
+                  'Unknown Student';
+                const idPart =
+                  student.id_number ||
+                  student.roll_number ||
+                  student.admission_no ||
+                  undefined;
+                const classPart = student.class_name || student.sclassName?.sclassName || undefined;
+                const display = [fullName, idPart ? `(${idPart})` : null, classPart ? `- ${classPart}` : null]
+                  .filter(Boolean)
+                  .join(' ');
+                return (
+                  <SelectItem key={student.id} value={student.id.toString()}>
+                    {display}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>

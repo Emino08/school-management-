@@ -208,7 +208,7 @@ class ExamOfficerController
                     WHERE er.approval_status = 'pending'
                     AND s.admin_id = :admin_id";
 
-            $queryParams = [':admin_id' => $user->admin_id];
+            $queryParams = [':admin_id' => $user->id];
 
             if ($examId) {
                 $sql .= " AND er.exam_id = :exam_id";
@@ -222,7 +222,7 @@ class ExamOfficerController
 
             $sql .= " ORDER BY er.created_at DESC";
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($sql);
+            $stmt = \App\Config\Database::getInstance()->getConnection()->prepare($sql);
             $stmt->execute($queryParams);
             $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 

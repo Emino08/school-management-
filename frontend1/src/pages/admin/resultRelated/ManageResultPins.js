@@ -16,7 +16,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { MdVpnKey, MdPeople, MdPerson, MdContentCopy, MdRefresh } from 'react-icons/md';
+import { MdVpnKey, MdPeople, MdPerson, MdContentCopy, MdRefresh, MdGroups, MdDownload } from 'react-icons/md';
 
 const ManageResultPins = () => {
     const { currentUser } = useSelector(state => state.user);
@@ -27,13 +27,20 @@ const ManageResultPins = () => {
     const [loading, setLoading] = useState(false);
     const [showBulkDialog, setShowBulkDialog] = useState(false);
     const [showSingleDialog, setShowSingleDialog] = useState(false);
+    const [showAllStudentsDialog, setShowAllStudentsDialog] = useState(false);
 
     // Form states
     const [bulkForm, setBulkForm] = useState({
         class_id: '',
         exam_id: '',
         academic_year_id: '',
-        valid_days: '30'
+        valid_days: '30',
+        max_checks: '5'
+    });
+
+    const [allStudentsForm, setAllStudentsForm] = useState({
+        valid_days: '30',
+        max_checks: '5'
     });
 
     const [singleForm, setSingleForm] = useState({
@@ -110,7 +117,28 @@ const ManageResultPins = () => {
             if (response.data.success) {
                 toast.success(`Generated ${response.data.total} PINs successfully!`);
                 setShowBulkDialog(false);
-                setBulkForm({ class_id: '', exam_id: '', academic_year_id: '', valid_days: '30' });
+                setBulkForm({ class_id: '', exam_id: '', academic_year_id: '', valid_days: '30', max_checks: '5' });
+                fetchPins();
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to generate PINs');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAllStudentsGenerate = async () => {
+        setLoading(true);
+        try {
+            const response = await axios.post(
+                `${import.meta.env.VITE_API_BASE_URL}/results/bulk-generate-pins-all`,
+                allStudentsForm
+            );
+
+            if (response.data.success) {
+                toast.success(`Generated ${response.data.total} PINs for all students successfully!`);
+                setShowAllStudentsDialog(false);
+                setAllStudentsForm({ valid_days: '30', max_checks: '5' });
                 fetchPins();
             }
         } catch (error) {
@@ -163,6 +191,34 @@ const ManageResultPins = () => {
         return { label: 'Active', color: 'bg-green-500' };
     };
 
+    const handleExportCSV = async (classId = null) => {
+        try {
+            let url = `${import.meta.env.VITE_API_BASE_URL}/results/pins/export-csv`;
+            if (classId) {
+                url += `?class_id=${classId}`;
+            }
+
+            const response = await axios.get(url, {
+                responseType: 'blob'
+            });
+
+            // Create a download link
+            const blob = new Blob([response.data], { type: 'text/csv' });
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `result_pins_${classId ? 'class_' + classId : 'all'}_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+
+            toast.success('PINs exported successfully!');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to export PINs');
+        }
+    };
+
     return (
         <div className="p-6 max-w-7xl mx-auto">
             <div className="mb-8">
@@ -174,15 +230,27 @@ const ManageResultPins = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="grid md:grid-cols-2 gap-4 mb-6">
+            <div className="grid md:grid-cols-3 gap-4 mb-6">
+                <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setShowAllStudentsDialog(true)}>
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                            <MdGroups className="text-2xl text-purple-600" />
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-lg text-gray-800">Bulk Generate - All Students</h3>
+                            <p className="text-sm text-gray-600">Generate PINs for all students</p>
+                        </div>
+                    </div>
+                </Card>
+
                 <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setShowBulkDialog(true)}>
                     <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                             <MdPeople className="text-2xl text-blue-600" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-lg text-gray-800">Bulk Generate for Class</h3>
-                            <p className="text-sm text-gray-600">Generate PINs for all students in a class</p>
+                            <h3 className="font-semibold text-lg text-gray-800">Bulk Generate by Class</h3>
+                            <p className="text-sm text-gray-600">Generate PINs for a specific class</p>
                         </div>
                     </div>
                 </Card>
@@ -203,11 +271,17 @@ const ManageResultPins = () => {
             {/* Generated PINs List */}
             <Card className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-gray-800">Generated PINs</h2>
-                    <Button variant="outline" size="sm" onClick={fetchPins}>
-                        <MdRefresh className="mr-2" />
-                        Refresh
-                    </Button>
+                    <h2 className="text-xl font-bold text-gray-800">Generated PINs ({pins.length})</h2>
+                    <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleExportCSV()}>
+                            <MdDownload className="mr-2" />
+                            Export All
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={fetchPins}>
+                            <MdRefresh className="mr-2" />
+                            Refresh
+                        </Button>
+                    </div>
                 </div>
 
                 {pins.length === 0 ? (
@@ -341,6 +415,18 @@ const ManageResultPins = () => {
                         </div>
 
                         <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Max Checks per PIN</label>
+                            <Input
+                                type="number"
+                                value={bulkForm.max_checks}
+                                onChange={(e) => setBulkForm({ ...bulkForm, max_checks: e.target.value })}
+                                min="1"
+                                max="20"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Number of times each PIN can be used</p>
+                        </div>
+
+                        <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-2">Valid Days</label>
                             <Input
                                 type="number"
@@ -432,6 +518,57 @@ const ManageResultPins = () => {
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={handleSingleGenerate} disabled={loading}>
                             {loading ? 'Generating...' : 'Generate PIN'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* All Students Generate Dialog */}
+            <AlertDialog open={showAllStudentsDialog} onOpenChange={setShowAllStudentsDialog}>
+                <AlertDialogContent className="max-w-md">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Generate PINs for All Students</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Generate result access PINs for all students in the school
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+                            <p className="text-sm text-amber-800">
+                                ⚠️ This will generate PINs for all students in the school. Make sure you want to proceed.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Max Checks per PIN</label>
+                            <Input
+                                type="number"
+                                value={allStudentsForm.max_checks}
+                                onChange={(e) => setAllStudentsForm({ ...allStudentsForm, max_checks: e.target.value })}
+                                min="1"
+                                max="20"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Number of times each PIN can be used</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Valid Days</label>
+                            <Input
+                                type="number"
+                                value={allStudentsForm.valid_days}
+                                onChange={(e) => setAllStudentsForm({ ...allStudentsForm, valid_days: e.target.value })}
+                                min="1"
+                                max="365"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Number of days the PINs will remain valid</p>
+                        </div>
+                    </div>
+
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleAllStudentsGenerate} disabled={loading}>
+                            {loading ? 'Generating...' : 'Generate All PINs'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

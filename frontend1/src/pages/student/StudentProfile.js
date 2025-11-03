@@ -9,8 +9,8 @@ const StudentProfile = () => {
   if (response) { console.log(response) }
   else if (error) { console.log(error) }
 
-  const sclassName = currentUser.sclassName
-  const studentSchool = currentUser.school
+  const sclassName = currentUser?.sclassName
+  const studentSchool = currentUser?.school
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -20,20 +20,20 @@ const StudentProfile = () => {
             <div className="flex flex-col items-center space-y-4">
               <Avatar className="w-32 h-32">
                 <AvatarFallback className="text-4xl">
-                  {String(currentUser.name).charAt(0)}
+                  {String(currentUser?.name || 'S').charAt(0)}
                 </AvatarFallback>
               </Avatar>
               <h2 className="text-2xl font-bold text-center">
-                {currentUser.name}
+                {currentUser?.name || 'Student'}
               </h2>
               <p className="text-base text-center">
-                Student ID No: {currentUser.rollNum || currentUser.id_number}
+                Student ID No: {currentUser?.rollNum || currentUser?.id_number || 'N/A'}
               </p>
               <p className="text-base text-center">
-                Class: {sclassName.sclassName}
+                Class: {sclassName?.sclassName || 'N/A'}
               </p>
               <p className="text-base text-center">
-                School: {studentSchool.schoolName}
+                School: {studentSchool?.schoolName || 'N/A'}
               </p>
             </div>
           </CardContent>

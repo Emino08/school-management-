@@ -1,21 +1,34 @@
 import axios from 'axios';
 
+// Configure base URL from environment
+const apiBase = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL)
+  || (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BASE_URL)
+  || '';
+if (apiBase) {
+  axios.defaults.baseURL = apiBase;
+}
+
 // Add a request interceptor to attach JWT token to all requests
 axios.interceptors.request.use(
     (config) => {
         // Get user from localStorage
         const userStr = localStorage.getItem('user');
-        if (userStr) {
-            try {
+        try {
+            if (userStr) {
                 const userData = JSON.parse(userStr);
-                // The user object contains: { token, role, admin/student/teacher, ... }
-                // If token exists, add it to Authorization header
-                if (userData.token) {
+                if (userData?.token) {
                     config.headers.Authorization = `Bearer ${userData.token}`;
                 }
-            } catch (error) {
-                console.error('Error parsing user from localStorage:', error);
             }
+            // Fallback: some older flows store raw token at localStorage.token
+            if (!config.headers.Authorization) {
+                const rawToken = localStorage.getItem('token');
+                if (rawToken) {
+                    config.headers.Authorization = `Bearer ${rawToken}`;
+                }
+            }
+        } catch (error) {
+            console.error('Error reading auth token:', error);
         }
         return config;
     },

@@ -22,6 +22,8 @@ import {
   groupAttendanceBySubject,
 } from "../../components/attendanceCalculator";
 import CustomPieChart from "../../components/CustomPieChart";
+import useInSession from "@/hooks/useInSession";
+import { RefreshCw } from 'lucide-react';
 
 const TeacherViewStudent = () => {
   const navigate = useNavigate();
@@ -35,6 +37,29 @@ const TeacherViewStudent = () => {
   const studentID = params.id;
   const teachSubject = currentUser.teachSubject?.subName;
   const teachSubjectID = currentUser.teachSubject?._id;
+  const teacherId = currentUser?.teacher?.id || currentUser?.id;
+
+  // Only allow attendance when the class is currently in session for this subject
+  const { inSession, loading: inSessionLoading, entries, refresh } = useInSession({ studentId: parseInt(studentID, 10), subjectId: parseInt(teachSubjectID, 10), teacherId: parseInt(teacherId, 10) });
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const remainingLabel = (() => {
+    if (!inSession || !entries || entries.length === 0) return '';
+    const end = entries[0]?.end_time;
+    if (!end) return '';
+    const [hh, mm, ss] = end.split(':').map(Number);
+    const endDate = new Date();
+    endDate.setHours(hh || 0, mm || 0, ss || 0, 0);
+    const diffMs = endDate - now;
+    if (diffMs <= 0) return 'ending...';
+    const mins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    const remM = mins % 60;
+    return hrs > 0 ? `${hrs}h ${remM}m remaining` : `${remM}m remaining`;
+  })();
 
   useEffect(() => {
     dispatch(getUserDetails(studentID, address));
@@ -211,16 +236,31 @@ const TeacherViewStudent = () => {
               )}
           </div>
 
-          <Button
-            variant="default"
-            onClick={() =>
-              navigate(
-                `/Teacher/class/student/attendance/${studentID}/${teachSubjectID}`,
-              )
-            }
-          >
-            Add Attendance
-          </Button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-600 flex items-center gap-2">
+              {inSessionLoading ? 'Checking timetable...' : (inSession ? 'In session' : 'Not in session')}
+              <Button size="icon" variant="ghost" onClick={refresh} title="Refresh session status">
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </span>
+            {inSession && entries && entries.length > 0 && (
+              <span className="text-xs text-gray-600">
+                {entries[0].day_of_week} {entries[0].start_time?.slice(0,5)}-{entries[0].end_time?.slice(0,5)} {remainingLabel && `(${remainingLabel})`}
+              </span>
+            )}
+            <Button
+              variant="default"
+              disabled={!inSession}
+              title={!inSession ? (inSessionLoading ? 'Checking timetable...' : 'Attendance allowed only during scheduled class time') : ''}
+              onClick={() =>
+                navigate(
+                  `/Teacher/class/student/attendance/${studentID}/${teachSubjectID}`,
+                )
+              }
+            >
+              Add Attendance
+            </Button>
+          </div>
 
           <div className="space-y-4">
             <h3 className="text-xl font-bold">Subject Marks:</h3>

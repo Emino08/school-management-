@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useSelector } from 'react-redux';
 import axios from '../../redux/axiosConfig';
+import useInSession from '@/hooks/useInSession';
+import { RefreshCw } from 'lucide-react';
 
 const TeacherProfile = () => {
   const { currentUser, response, error } = useSelector((state) => state.user);
@@ -60,6 +62,28 @@ const TeacherProfile = () => {
     };
     fetchSubjects();
   }, [currentUser]);
+
+  // In-session indicator for attendance tab
+  const selectedAttendanceObj = subjects.find(s => String(s.id) === String(selectedAttendanceSubject));
+  const classIdForAttendance = selectedAttendanceObj?.class_id || selectedAttendanceObj?.classId;
+  const teacherId = currentUser?.teacher?.id || currentUser?.id;
+  const { inSession: inSessionAttendance, loading: inSessionAttendanceLoading, entries: inSessionEntries, refresh: refreshInSession } = useInSession({ classId: classIdForAttendance ? parseInt(classIdForAttendance, 10) : undefined, subjectId: selectedAttendanceSubject && selectedAttendanceSubject !== 'ALL' ? parseInt(selectedAttendanceSubject, 10) : undefined, teacherId: teacherId ? parseInt(teacherId, 10) : undefined });
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
+  const remainingAttendance = (() => {
+    if (!inSessionAttendance || !inSessionEntries || inSessionEntries.length === 0) return '';
+    const end = inSessionEntries[0]?.end_time;
+    if (!end) return '';
+    const [hh, mm, ss] = end.split(':').map(Number);
+    const endDate = new Date();
+    endDate.setHours(hh || 0, mm || 0, ss || 0, 0);
+    const diffMs = endDate - now;
+    if (diffMs <= 0) return 'ending...';
+    const mins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(mins / 60);
+    const remM = mins % 60;
+    return hrs > 0 ? `${hrs}h ${remM}m remaining` : `${remM}m remaining`;
+  })();
 
   // Fetch attendance data
   useEffect(() => {
@@ -402,6 +426,21 @@ const TeacherProfile = () => {
                   <p className="text-gray-500">No students found for this subject.</p>
                 ) : (
                   <div className="overflow-x-auto">
+                    <div className="mb-2 text-sm text-gray-700 flex items-center gap-2">
+                      {inSessionAttendanceLoading ? 'Checking timetable...' : (inSessionAttendance ? 'Class is in session' : 'Attendance allowed only during scheduled class time')}
+                      <Button size="icon" variant="ghost" onClick={refreshInSession} title="Refresh session status">
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    {inSessionAttendance && inSessionEntries && inSessionEntries.length > 0 && (
+                      <div className="mb-3 text-xs text-gray-600 flex items-center gap-3">
+                        <span>
+                          {inSessionEntries[0].day_of_week} • {inSessionEntries[0].start_time?.slice(0,5)} - {inSessionEntries[0].end_time?.slice(0,5)}
+                          {inSessionEntries[0].room_number ? ` • Room ${inSessionEntries[0].room_number}` : ''}
+                        </span>
+                        {remainingAttendance && <span className="text-emerald-700">({remainingAttendance})</span>}
+                      </div>
+                    )}
                     <table className="w-full border-collapse border border-gray-300">
                       <thead>
                         <tr className="bg-gray-100">
@@ -433,6 +472,8 @@ const TeacherProfile = () => {
                               <Button
                                 size="sm"
                                 variant={student.today_status === 'present' ? 'default' : 'destructive'}
+                                disabled={!inSessionAttendance}
+                                title={!inSessionAttendance ? (inSessionAttendanceLoading ? 'Checking timetable...' : 'Not in session') : ''}
                                 onClick={() => handleAttendanceToggle(student.student_id, student.today_status)}
                               >
                                 {student.today_status === 'present' ? 'Present' : 'Absent'}

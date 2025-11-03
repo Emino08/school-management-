@@ -25,6 +25,7 @@ use App\Controllers\PaymentController;
 use App\Controllers\NotificationController;
 use App\Controllers\ReportsController;
 use App\Controllers\SettingsController;
+use App\Controllers\UserManagementController;
 
 // Root welcome route
 $app->get('/', function ($request, $response) {
@@ -99,6 +100,7 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/students/login', [StudentController::class, 'login']);
     $group->post('/students/bulk-upload', [StudentController::class, 'bulkUpload'])->add(new AuthMiddleware());
     $group->get('/students/bulk-template', [StudentController::class, 'bulkTemplate'])->add(new AuthMiddleware());
+    $group->get('/students/dashboard-stats', [StudentController::class, 'getDashboardStats'])->add(new AuthMiddleware());
     $group->get('/students', [StudentController::class, 'getAllStudents'])->add(new AuthMiddleware());
     $group->get('/students/class/{id}', [StudentController::class, 'getStudentsByClass'])->add(new AuthMiddleware());
     $group->get('/students/{id}/grades', [StudentController::class, 'getStudentGrades'])->add(new AuthMiddleware());
@@ -158,6 +160,11 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     // Promotion Management routes
     $group->post('/promotions/process/{id}', [PromotionController::class, 'processPromotions'])->add(new AuthMiddleware());
     $group->get('/promotions/stats', [PromotionController::class, 'getPromotionStats'])->add(new AuthMiddleware());
+    $group->post('/promotions/rollover', [PromotionController::class, 'rollover'])->add(new AuthMiddleware());
+    $group->get('/promotions/preview', [PromotionController::class, 'preview'])->add(new AuthMiddleware());
+    $group->get('/promotions/waitlist', [PromotionController::class, 'waitlist'])->add(new AuthMiddleware());
+    $group->get('/promotions/repeats', [PromotionController::class, 'repeats'])->add(new AuthMiddleware());
+    $group->post('/promotions/assign', [PromotionController::class, 'manualAssign'])->add(new AuthMiddleware());
 
     // Term Management routes
     $group->get('/terms/current', [TermController::class, 'getCurrentTerm'])->add(new AuthMiddleware());
@@ -194,6 +201,7 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     // Notice routes
     $group->post('/notices', [NoticeController::class, 'create'])->add(new AuthMiddleware());
     $group->get('/notices', [NoticeController::class, 'getAll'])->add(new AuthMiddleware());
+    $group->get('/notices/stats', [NoticeController::class, 'getStats'])->add(new AuthMiddleware());
     $group->get('/notices/audience/{audience}', [NoticeController::class, 'getByAudience'])->add(new AuthMiddleware());
     $group->put('/notices/{id}', [NoticeController::class, 'update'])->add(new AuthMiddleware());
     $group->delete('/notices/{id}', [NoticeController::class, 'delete'])->add(new AuthMiddleware());
@@ -201,8 +209,11 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     // Complaint routes
     $group->post('/complaints', [ComplaintController::class, 'create'])->add(new AuthMiddleware());
     $group->get('/complaints', [ComplaintController::class, 'getAll'])->add(new AuthMiddleware());
+    $group->get('/complaints/stats', [ComplaintController::class, 'getStats'])->add(new AuthMiddleware());
     $group->get('/complaints/my', [ComplaintController::class, 'getUserComplaints'])->add(new AuthMiddleware());
+    $group->get('/complaints/{id}', [ComplaintController::class, 'getById'])->add(new AuthMiddleware());
     $group->put('/complaints/{id}/status', [ComplaintController::class, 'updateStatus'])->add(new AuthMiddleware());
+    $group->delete('/complaints/{id}', [ComplaintController::class, 'delete'])->add(new AuthMiddleware());
 
     // Result Management routes
     $group->get('/results/student/{studentId}/exam/{examId}', [ResultController::class, 'getStudentResults'])->add(new AuthMiddleware());
@@ -211,6 +222,8 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/results/check-with-pin', [ResultController::class, 'checkResultWithPin']); // Public - no auth required
     $group->post('/results/generate-pin', [ResultController::class, 'generatePin'])->add(new AuthMiddleware());
     $group->post('/results/bulk-generate-pins', [ResultController::class, 'bulkGeneratePins'])->add(new AuthMiddleware());
+    $group->post('/results/bulk-generate-pins-all', [ResultController::class, 'bulkGeneratePinsAllStudents'])->add(new AuthMiddleware());
+    $group->get('/results/pins/export-csv', [ResultController::class, 'exportPinsCSV'])->add(new AuthMiddleware());
     $group->post('/results/publish/{examId}', [ResultController::class, 'publishResults'])->add(new AuthMiddleware());
     $group->get('/results/ranking/{classId}/{examId}', [ResultController::class, 'getClassRanking'])->add(new AuthMiddleware());
     $group->get('/results/pins', [ResultController::class, 'getAdminPins'])->add(new AuthMiddleware());
@@ -245,6 +258,20 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/exam-officer/verify-results', [ExamOfficerController::class, 'verifyExamResults'])->add(new AuthMiddleware());
     $group->post('/exam-officer/verify-exam/{examId}', [ExamOfficerController::class, 'bulkVerifyExamResults'])->add(new AuthMiddleware());
     $group->get('/exam-officer/teacher-stats', [ExamOfficerController::class, 'getTeacherExamOfficerStats'])->add(new AuthMiddleware());
+
+    // User Management routes
+    $group->get('/user-management/users', [UserManagementController::class, 'getAllUsers'])->add(new AuthMiddleware());
+    $group->get('/user-management/stats', [UserManagementController::class, 'getUserStats'])->add(new AuthMiddleware());
+    $group->post('/user-management/users', [UserManagementController::class, 'createUser'])->add(new AuthMiddleware());
+    $group->put('/user-management/users/{id}', [UserManagementController::class, 'updateUser'])->add(new AuthMiddleware());
+    $group->delete('/user-management/users/{id}', [UserManagementController::class, 'deleteUser'])->add(new AuthMiddleware());
+    $group->post('/user-management/teachers/{id}/toggle-exam-officer', [UserManagementController::class, 'toggleExamOfficer'])->add(new AuthMiddleware());
+    $group->post('/user-management/bulk-operation', [UserManagementController::class, 'bulkOperation'])->add(new AuthMiddleware());
+
+    // Finance User routes
+    $group->post('/finance-users/login', [\App\Controllers\FinanceUserController::class, 'login']);
+    $group->get('/finance-users/profile', [\App\Controllers\FinanceUserController::class, 'getProfile'])->add(new AuthMiddleware());
+    $group->put('/finance-users/profile', [\App\Controllers\FinanceUserController::class, 'updateProfile'])->add(new AuthMiddleware());
 
     // Result Management routes (for exam officers with approval privileges)
     $group->get('/result-management/pending-grades', [ResultManagementController::class, 'getPendingGrades'])->add(new AuthMiddleware());
@@ -281,6 +308,7 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/timetable/teacher/{teacherId}', [TimetableController::class, 'getTeacherTimetable'])->add(new AuthMiddleware());
     $group->get('/timetable/student/{studentId}', [TimetableController::class, 'getStudentTimetable'])->add(new AuthMiddleware());
     $group->get('/timetable/upcoming', [TimetableController::class, 'getUpcomingClasses'])->add(new AuthMiddleware());
+    $group->get('/timetable/in-session', [TimetableController::class, 'isInSession'])->add(new AuthMiddleware());
     $group->put('/timetable/{id}', [TimetableController::class, 'updateEntry'])->add(new AuthMiddleware());
     $group->delete('/timetable/{id}', [TimetableController::class, 'deleteEntry'])->add(new AuthMiddleware());
 
@@ -356,26 +384,118 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/fee-structures', [PaymentController::class, 'getAllFeeStructures'])->add(new AuthMiddleware());
     $group->put('/fee-structures/{id}', [PaymentController::class, 'updateFeeStructure'])->add(new AuthMiddleware());
     $group->delete('/fee-structures/{id}', [PaymentController::class, 'deleteFeeStructure'])->add(new AuthMiddleware());
+    // Import defaults from academic year
+    $group->post('/fee-structures/import-from-year', function ($request, $response) {
+        $controller = new PaymentController();
+        $user = $request->getAttribute('user');
+        $data = $request->getParsedBody() ?? [];
+        $query = $request->getQueryParams();
+        $academicYearId = $data['academic_year_id'] ?? $query['academic_year_id'] ?? null;
+        if (!$academicYearId) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'academic_year_id is required']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+        $result = $controller->importFeeStructuresFromAcademicYear($user->id, $academicYearId);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
 
-    // Payments
-    $group->post('/payments', [PaymentController::class, 'recordPayment'])->add(new AuthMiddleware());
-    $group->get('/payments/student/{studentId}', [PaymentController::class, 'getStudentPaymentHistory'])->add(new AuthMiddleware());
-    $group->get('/payments', [PaymentController::class, 'getAllPayments'])->add(new AuthMiddleware());
-    $group->get('/payments/summary', [PaymentController::class, 'getPaymentSummary'])->add(new AuthMiddleware());
+    // Payments (use closures to adapt non-PSR-7 signatures)
+    $group->post('/payments', function ($request, $response) {
+        $controller = new PaymentController();
+        $user = $request->getAttribute('user');
+        $data = (array) ($request->getParsedBody() ?? []);
+        if (!isset($data['recorded_by']) && $user) { $data['recorded_by'] = $user->id ?? null; }
+        $result = $controller->recordPayment($data);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
 
-    // Invoices
-    $group->post('/invoices', [PaymentController::class, 'createInvoice'])->add(new AuthMiddleware());
-    $group->get('/invoices/{id}', [PaymentController::class, 'getInvoice'])->add(new AuthMiddleware());
-    $group->get('/invoices', [PaymentController::class, 'getAllInvoices'])->add(new AuthMiddleware());
+    $group->get('/payments/student/{studentId}', function ($request, $response, $args) {
+        $controller = new PaymentController();
+        $query = $request->getQueryParams();
+        $academicYearId = $query['academic_year_id'] ?? null;
+        $result = $controller->getStudentPaymentHistory($args['studentId'], $academicYearId);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+
+    $group->get('/payments', function ($request, $response) {
+        $controller = new PaymentController();
+        $filters = $request->getQueryParams();
+        $result = $controller->getAllPayments($filters);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+
+    $group->get('/payments/summary', function ($request, $response) {
+        $controller = new PaymentController();
+        $query = $request->getQueryParams();
+        $academicYearId = $query['academic_year_id'] ?? null;
+        $term = $query['term'] ?? null;
+        if (!$academicYearId) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'academic_year_id is required']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+        $result = $controller->getPaymentSummary($academicYearId, $term);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+
+    // Invoices (use closures to adapt non-PSR-7 signatures)
+    $group->post('/invoices', function ($request, $response) {
+        $controller = new PaymentController();
+        $user = $request->getAttribute('user');
+        $data = (array) ($request->getParsedBody() ?? []);
+        if (!isset($data['issued_by']) && $user) { $data['issued_by'] = $user->id ?? null; }
+        $result = $controller->createInvoice($data);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+
+    $group->get('/invoices/{id}', function ($request, $response, $args) {
+        $controller = new PaymentController();
+        $result = $controller->getInvoice($args['id']);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+
+    $group->get('/invoices', function ($request, $response) {
+        $controller = new PaymentController();
+        $filters = $request->getQueryParams();
+        $result = $controller->getAllInvoices($filters);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
 
     // ===== NOTIFICATION ROUTES =====
-    $group->post('/notifications', [NotificationController::class, 'create'])->add(new AuthMiddleware());
-    $group->get('/notifications', [NotificationController::class, 'getAll'])->add(new AuthMiddleware());
-    $group->get('/notifications/user', [NotificationController::class, 'getForUser'])->add(new AuthMiddleware());
-    $group->post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->add(new AuthMiddleware());
-    $group->get('/notifications/unread-count', [NotificationController::class, 'getUnreadCount'])->add(new AuthMiddleware());
-    $group->put('/notifications/{id}', [NotificationController::class, 'update'])->add(new AuthMiddleware());
-    $group->delete('/notifications/{id}', [NotificationController::class, 'delete'])->add(new AuthMiddleware());
+    $group->post('/notifications', [NotificationController::class, 'createNotification'])->add(new AuthMiddleware());
+    $group->get('/notifications', [NotificationController::class, 'getAllNotifications'])->add(new AuthMiddleware());
+    $group->put('/notifications/{id}', [NotificationController::class, 'updateNotification'])->add(new AuthMiddleware());
+    $group->delete('/notifications/{id}', [NotificationController::class, 'deleteNotification'])->add(new AuthMiddleware());
+    // Use closures to adapt user context for methods that aren't PSR-7
+    $group->get('/notifications/user', function ($request, $response) {
+        $controller = new \App\Controllers\NotificationController();
+        $user = $request->getAttribute('user');
+        $result = $controller->getForUser($user->id, $user->role);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    $group->post('/notifications/{id}/read', function ($request, $response, $args) {
+        $controller = new \App\Controllers\NotificationController();
+        $user = $request->getAttribute('user');
+        $result = $controller->markAsRead($args['id'], $user->id, $user->role);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    $group->get('/notifications/unread-count', function ($request, $response) {
+        $controller = new \App\Controllers\NotificationController();
+        $user = $request->getAttribute('user');
+        $result = $controller->getUnreadCount($user->id, $user->role);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    // (duplicates removed) PUT/DELETE for notifications are defined above using PSR-7 handlers
 
     // ===== REPORTS & ANALYTICS ROUTES =====
     $group->get('/reports/class-performance', [ReportsController::class, 'getClassPerformance'])->add(new AuthMiddleware());
@@ -384,7 +504,7 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/reports/attendance-summary', [ReportsController::class, 'getAttendanceSummary'])->add(new AuthMiddleware());
     $group->get('/reports/student-attendance/{studentId}', [ReportsController::class, 'getStudentAttendance'])->add(new AuthMiddleware());
     $group->get('/reports/financial-overview', [ReportsController::class, 'getFinancialOverview'])->add(new AuthMiddleware());
-    $group->get('/reports/fee-collection', [ReportsController::class, 'getFeeCollectionByClass'])->add(new AuthMiddleware());
+    $group->get('/reports/fee-collection', [ReportsController::class, 'getFeeCollection'])->add(new AuthMiddleware());
     $group->get('/reports/behavior', [ReportsController::class, 'getBehaviorReports'])->add(new AuthMiddleware());
     $group->get('/reports/dashboard-stats', [ReportsController::class, 'getDashboardStats'])->add(new AuthMiddleware());
 
@@ -392,4 +512,49 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/settings', [SettingsController::class, 'get'])->add(new AuthMiddleware());
     $group->put('/settings', [SettingsController::class, 'update'])->add(new AuthMiddleware());
     $group->post('/settings/upload-logo', [SettingsController::class, 'uploadLogo'])->add(new AuthMiddleware());
+    $group->post('/settings/backup', [SettingsController::class, 'createBackup'])->add(new AuthMiddleware());
+    $group->post('/settings/restore', [SettingsController::class, 'restoreBackup'])->add(new AuthMiddleware());
+
+    // ===== ADMIN-SPECIFIC ENHANCED ROUTES =====
+    // Activity Logs (Admin)
+    $group->get('/admin/activity-logs', [\App\Controllers\ActivityLogController::class, 'getLogs'])->add(new AuthMiddleware());
+    $group->get('/admin/activity-logs/stats', [\App\Controllers\ActivityLogController::class, 'getStats'])->add(new AuthMiddleware());
+    $group->get('/admin/activity-logs/export', [\App\Controllers\ActivityLogController::class, 'export'])->add(new AuthMiddleware());
+
+    // Notifications (Admin)
+    $group->post('/admin/notifications', [NotificationController::class, 'createNotification'])->add(new AuthMiddleware());
+    $group->get('/admin/notifications', [NotificationController::class, 'getAllNotifications'])->add(new AuthMiddleware());
+    $group->put('/admin/notifications/{id}', [NotificationController::class, 'updateNotification'])->add(new AuthMiddleware());
+    $group->delete('/admin/notifications/{id}', [NotificationController::class, 'deleteNotification'])->add(new AuthMiddleware());
+
+    // System Settings (Admin)
+    $group->get('/admin/settings', [SettingsController::class, 'getSettings'])->add(new AuthMiddleware());
+    $group->put('/admin/settings', [SettingsController::class, 'updateSettings'])->add(new AuthMiddleware());
+    $group->post('/admin/settings/backup', [SettingsController::class, 'createBackup'])->add(new AuthMiddleware());
+
+    // Reports (Admin)
+    $group->get('/admin/reports/overview', [ReportsController::class, 'getOverview'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/academic', [ReportsController::class, 'getAcademicReport'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/financial', [ReportsController::class, 'getFinancialReport'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/attendance', [ReportsController::class, 'getAttendanceReport'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/{type}/export', [ReportsController::class, 'exportReport'])->add(new AuthMiddleware());
+
+    // Cache Management
+    $group->post('/admin/cache/clear', function ($request, $response) {
+        try {
+            $cache = new \App\Utils\Cache();
+            $count = $cache->flush();
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => "Cleared $count cache files"
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to clear cache: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    })->add(new AuthMiddleware());
 });

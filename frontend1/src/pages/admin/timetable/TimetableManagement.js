@@ -51,7 +51,7 @@ const TimetableManagement = () => {
   const { currentUser } = useSelector((state) => state.user);
   const { sclassesList } = useSelector((state) => state.sclass);
   const { teachersList } = useSelector((state) => state.teacher);
-  const { academicYearsList } = useSelector((state) => state.academicYear);
+  const { academicYearData: academicYearsList } = useSelector((state) => state.academicYear);
   const { groupedTimetable, loading, error, response } = useSelector(
     (state) => state.timetable
   );

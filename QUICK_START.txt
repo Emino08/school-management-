@@ -87,6 +87,7 @@
       - cd backend1
       - php migrations/009_add_minimum_payment_to_academic_years.php
       - php migrations/010_create_activity_logs_table.php
+      - php migrations/033_class_parallel_and_thresholds.php   (adds class capacity + placement thresholds)
 
    2. Start backend (MUST be running):
       - Double-click START_BACKEND.bat

@@ -68,6 +68,62 @@ class ResultPinModel extends BaseModel
         return $this->bulkCreatePins($adminId, $studentIds, $maxChecks, $expiryDays);
     }
 
+    public function bulkCreatePinsForAllStudents($adminId, $maxChecks = 5, $expiryDays = null)
+    {
+        // Get all active students
+        $stmt = $this->db->prepare("
+            SELECT id FROM students WHERE admin_id = :admin_id
+        ");
+        $stmt->execute([':admin_id' => $adminId]);
+        $students = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $studentIds = array_column($students, 'id');
+        return $this->bulkCreatePins($adminId, $studentIds, $maxChecks, $expiryDays);
+    }
+
+    public function getPinsForExport($adminId, $classId = null, $academicYearId = null)
+    {
+        $sql = "SELECT rp.pin_code,
+                       st.name as student_name,
+                       st.admission_no,
+                       st.id_number,
+                       c.class_name,
+                       rp.max_checks,
+                       rp.used_checks,
+                       (rp.max_checks - rp.used_checks) as remaining_checks,
+                       rp.expires_at,
+                       rp.created_at,
+                       CASE
+                           WHEN rp.is_active = 0 THEN 'Inactive'
+                           WHEN rp.used_checks >= rp.max_checks THEN 'Expired'
+                           WHEN rp.expires_at IS NOT NULL AND rp.expires_at < NOW() THEN 'Expired'
+                           ELSE 'Active'
+                       END as status
+                FROM {$this->table} rp
+                JOIN students st ON rp.student_id = st.id
+                LEFT JOIN student_enrollments se ON st.id = se.student_id
+                LEFT JOIN classes c ON se.class_id = c.id
+                WHERE rp.admin_id = :admin_id";
+
+        $params = [':admin_id' => $adminId];
+
+        if ($classId) {
+            $sql .= " AND se.class_id = :class_id";
+            $params[':class_id'] = $classId;
+        }
+
+        if ($academicYearId) {
+            $sql .= " AND se.academic_year_id = :academic_year_id";
+            $params[':academic_year_id'] = $academicYearId;
+        }
+
+        $sql .= " ORDER BY c.class_name, st.name";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
     public function validateAndUsePin($pin, $studentId)
     {
         $sql = "SELECT rp.*, st.name as student_name, st.id_number as id_number, st.admission_no
