@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { MdLock, MdSchool, MdEmojiEvents, MdPerson } from 'react-icons/md';
+import BoSchoolLogo from '@/assets/Bo-School-logo.png';
 
 const PublicResultChecker = () => {
     const [pin, setPin] = useState('');
@@ -68,10 +69,17 @@ const PublicResultChecker = () => {
                 {/* Header */}
                 <div className="text-center mb-8">
                     <div className="flex items-center justify-center mb-4">
-                        <MdSchool className="text-6xl text-blue-600" />
+                        <div className="flex flex-col items-center gap-4">
+                            <img
+                                src={BoSchoolLogo}
+                                alt="Bo School crest"
+                                className="h-20 w-auto drop-shadow-[0_12px_24px_rgba(0,0,0,0.35)]"
+                            />
+                            <MdSchool className="text-4xl text-blue-600" />
+                        </div>
                     </div>
                     <h1 className="text-4xl font-bold text-gray-800 mb-2">
-                        SABITECK School Management System
+                        School Management System
                     </h1>
                     <p className="text-xl text-gray-600">Student Result Checker</p>
                 </div>
@@ -296,7 +304,7 @@ const PublicResultChecker = () => {
 
             {/* Footer */}
             <div className="text-center mt-12 text-gray-600 text-sm">
-                <p>&copy; 2025 SABITECK School Management System. All rights reserved.</p>
+                <p>&copy; 2025 School Management System. All rights reserved.</p>
             </div>
         </div>
     );

@@ -27,8 +27,10 @@ class ResultController
     {
         $teacherId = $args['id'];
         $user = $request->getAttribute('user');
-        // Only the same teacher or admin can view
-        if (!$user || ($user->role !== 'Admin' && (string)$user->id !== (string)$teacherId)) {
+        $role = strtolower($user->role ?? '');
+        $hasAdminAccess = in_array($role, ['admin', 'principal'], true);
+        // Only the same teacher or admin/principal can view
+        if (!$user || (!$hasAdminAccess && (string)$user->id !== (string)$teacherId)) {
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Unauthorized']));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
         }
@@ -409,7 +411,8 @@ class ResultController
         $examId = $args['examId'];
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
-        if (!$user || $user->role !== 'Admin') {
+        $role = strtolower($user->role ?? '');
+        if (!$user || !in_array($role, ['admin', 'principal'], true)) {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Only Admin/Principal can publish results'
@@ -605,18 +608,19 @@ class ResultController
             }
 
             $user = $request->getAttribute('user');
+            $role = strtolower($user->role ?? '');
             $includeUnverified = isset($params['include_unverified']) && ($params['include_unverified'] === '1' || $params['include_unverified'] === 'true');
             if ($approvalStatus) {
                 $sql .= " AND er.approval_status = :approval_status";
                 $bindings[':approval_status'] = $approvalStatus;
             } else {
-                if (!($includeUnverified && $user && $user->role === 'Admin')) {
+                if (!($includeUnverified && $user && in_array($role, ['admin', 'principal'], true))) {
                     $sql .= " AND er.approval_status = 'approved'";
                 }
             }
 
             // Admin/Principal should only see verified grades unless explicitly requested
-            if ($user && $user->role === 'Admin') {
+            if ($user && in_array($role, ['admin', 'principal'], true)) {
                 $showUnverified = isset($params['show_unverified']) && ($params['show_unverified'] === '1' || $params['show_unverified'] === 'true');
                 if (!$showUnverified) {
                     $sql .= " AND er.is_verified = TRUE";
@@ -644,4 +648,3 @@ class ResultController
         }
     }
 }
-

@@ -41,19 +41,20 @@ class CreateFinanceUsers
 
             $this->conn->exec($sql);
 
-            // Add permissions column to teachers table for exam officer management
-            $alterTeachers = "ALTER TABLE teachers
-                ADD COLUMN IF NOT EXISTS is_exam_officer TINYINT(1) DEFAULT 0 AFTER experience_years,
-                ADD COLUMN IF NOT EXISTS can_approve_results TINYINT(1) DEFAULT 0 AFTER is_exam_officer,
-                ADD INDEX IF NOT EXISTS idx_is_exam_officer (is_exam_officer)";
+            // Add permissions columns to teachers table for exam officer management
+            $column = $this->conn->query("SHOW COLUMNS FROM teachers LIKE 'is_exam_officer'")->fetch();
+            if (!$column) {
+                $this->conn->exec("ALTER TABLE teachers ADD COLUMN is_exam_officer TINYINT(1) DEFAULT 0 AFTER experience_years");
+            }
 
-            try {
-                $this->conn->exec($alterTeachers);
-            } catch (PDOException $e) {
-                // Columns might already exist, continue
-                if (strpos($e->getMessage(), 'Duplicate column name') === false) {
-                    throw $e;
-                }
+            $column = $this->conn->query("SHOW COLUMNS FROM teachers LIKE 'can_approve_results'")->fetch();
+            if (!$column) {
+                $this->conn->exec("ALTER TABLE teachers ADD COLUMN can_approve_results TINYINT(1) DEFAULT 0 AFTER is_exam_officer");
+            }
+
+            $indexExists = $this->conn->query("SHOW INDEX FROM teachers WHERE Key_name = 'idx_is_exam_officer'")->fetch();
+            if (!$indexExists) {
+                $this->conn->exec("ALTER TABLE teachers ADD INDEX idx_is_exam_officer (is_exam_officer)");
             }
 
             // Create user_activity_logs table for tracking user management actions
@@ -75,11 +76,15 @@ class CreateFinanceUsers
 
             $this->conn->exec($activityLog);
 
-            $this->conn->commit();
+            if ($this->conn->inTransaction()) {
+                $this->conn->commit();
+            }
             echo "Migration 032_create_finance_users executed successfully!\n";
             return true;
         } catch (PDOException $e) {
-            $this->conn->rollBack();
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
             echo "Migration failed: " . $e->getMessage() . "\n";
             return false;
         }
@@ -92,16 +97,30 @@ class CreateFinanceUsers
 
             $this->conn->exec("DROP TABLE IF EXISTS user_activity_logs");
             $this->conn->exec("DROP TABLE IF EXISTS finance_users");
-            $this->conn->exec("ALTER TABLE teachers
-                DROP COLUMN IF EXISTS is_exam_officer,
-                DROP COLUMN IF EXISTS can_approve_results,
-                DROP INDEX IF EXISTS idx_is_exam_officer");
+            $indexExists = $this->conn->query("SHOW INDEX FROM teachers WHERE Key_name = 'idx_is_exam_officer'")->fetch();
+            if ($indexExists) {
+                $this->conn->exec("ALTER TABLE teachers DROP INDEX idx_is_exam_officer");
+            }
 
-            $this->conn->commit();
+            $column = $this->conn->query("SHOW COLUMNS FROM teachers LIKE 'can_approve_results'")->fetch();
+            if ($column) {
+                $this->conn->exec("ALTER TABLE teachers DROP COLUMN can_approve_results");
+            }
+
+            $column = $this->conn->query("SHOW COLUMNS FROM teachers LIKE 'is_exam_officer'")->fetch();
+            if ($column) {
+                $this->conn->exec("ALTER TABLE teachers DROP COLUMN is_exam_officer");
+            }
+
+            if ($this->conn->inTransaction()) {
+                $this->conn->commit();
+            }
             echo "Migration 032_create_finance_users rolled back successfully!\n";
             return true;
         } catch (PDOException $e) {
-            $this->conn->rollBack();
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
             echo "Rollback failed: " . $e->getMessage() . "\n";
             return false;
         }

@@ -26,12 +26,16 @@ use App\Controllers\NotificationController;
 use App\Controllers\ReportsController;
 use App\Controllers\SettingsController;
 use App\Controllers\UserManagementController;
+use App\Controllers\ParentController;
+use App\Controllers\MedicalController;
+use App\Controllers\HouseController;
+use App\Controllers\SuspensionController;
 
 // Root welcome route
 $app->get('/', function ($request, $response) {
     $data = [
         'success' => true,
-        'message' => 'Welcome to SABITECK School Management System API',
+        'message' => 'Welcome to the School Management System API',
         'version' => '1.0.0',
         'status' => 'running',
         'timestamp' => date('Y-m-d H:i:s'),
@@ -501,6 +505,51 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/reports/class-performance', [ReportsController::class, 'getClassPerformance'])->add(new AuthMiddleware());
     $group->get('/reports/subject-performance', [ReportsController::class, 'getSubjectPerformance'])->add(new AuthMiddleware());
     $group->get('/reports/top-performers', [ReportsController::class, 'getTopPerformers'])->add(new AuthMiddleware());
+
+    // ===== PARENT ROUTES =====
+    $group->post('/parents/register', [ParentController::class, 'register']);
+    $group->post('/parents/login', [ParentController::class, 'login']);
+    $group->get('/parents/profile', [ParentController::class, 'getProfile'])->add(new AuthMiddleware());
+    $group->put('/parents/profile', [ParentController::class, 'updateProfile'])->add(new AuthMiddleware());
+    $group->post('/parents/verify-child', [ParentController::class, 'verifyAndLinkChild'])->add(new AuthMiddleware());
+    $group->get('/parents/children', [ParentController::class, 'getChildren'])->add(new AuthMiddleware());
+    $group->get('/parents/children/{student_id}/attendance', [ParentController::class, 'getChildAttendance'])->add(new AuthMiddleware());
+    $group->get('/parents/children/{student_id}/results', [ParentController::class, 'getChildResults'])->add(new AuthMiddleware());
+    $group->get('/parents/notices', [ParentController::class, 'getNotices'])->add(new AuthMiddleware());
+    $group->get('/parents/notifications', [ParentController::class, 'getNotifications'])->add(new AuthMiddleware());
+    $group->put('/parents/notifications/{id}/read', [ParentController::class, 'markNotificationRead'])->add(new AuthMiddleware());
+    $group->post('/parents/communications', [ParentController::class, 'createCommunication'])->add(new AuthMiddleware());
+    $group->get('/parents/communications', [ParentController::class, 'getCommunications'])->add(new AuthMiddleware());
+    $group->get('/parents/communications/{id}', [ParentController::class, 'getCommunicationDetails'])->add(new AuthMiddleware());
+
+    // ===== MEDICAL STAFF ROUTES =====
+    $group->post('/medical/register', [MedicalController::class, 'register'])->add(new AuthMiddleware());
+    $group->post('/medical/login', [MedicalController::class, 'login']);
+    $group->get('/medical/staff', [MedicalController::class, 'getAllStaff'])->add(new AuthMiddleware());
+    $group->post('/medical/records', [MedicalController::class, 'createRecord'])->add(new AuthMiddleware());
+    $group->put('/medical/records/{id}', [MedicalController::class, 'updateRecord'])->add(new AuthMiddleware());
+    $group->post('/medical/records/{id}/close', [MedicalController::class, 'closeRecord'])->add(new AuthMiddleware());
+    $group->get('/medical/records/student/{student_id}', [MedicalController::class, 'getStudentRecords'])->add(new AuthMiddleware());
+    $group->get('/medical/records/active', [MedicalController::class, 'getActiveRecords'])->add(new AuthMiddleware());
+    $group->get('/medical/records/{id}', [MedicalController::class, 'getRecordById'])->add(new AuthMiddleware());
+    $group->post('/medical/documents/upload', [MedicalController::class, 'uploadDocument'])->add(new AuthMiddleware());
+
+    // ===== HOUSE/TOWN SYSTEM ROUTES =====
+    // IMPORTANT: Specific routes must come before parameterized routes
+    $group->post('/houses', [HouseController::class, 'createHouse'])->add(new AuthMiddleware());
+    $group->get('/houses', [HouseController::class, 'getAllHouses'])->add(new AuthMiddleware());
+    $group->get('/houses/eligible-students', [HouseController::class, 'getEligibleStudents'])->add(new AuthMiddleware());
+    $group->post('/houses/assign-master', [HouseController::class, 'assignHouseMaster'])->add(new AuthMiddleware());
+    $group->post('/houses/register-student', [HouseController::class, 'registerStudent'])->add(new AuthMiddleware());
+    $group->get('/houses/{id}/students', [HouseController::class, 'getHouseStudents'])->add(new AuthMiddleware());
+    $group->get('/houses/{id}', [HouseController::class, 'getHouseDetails'])->add(new AuthMiddleware());
+    $group->put('/houses/{id}', [HouseController::class, 'updateHouse'])->add(new AuthMiddleware());
+
+    // ===== SUSPENSION MANAGEMENT ROUTES =====
+    $group->post('/suspensions', [SuspensionController::class, 'suspendStudent'])->add(new AuthMiddleware());
+    $group->put('/suspensions/{student_id}/lift', [SuspensionController::class, 'liftSuspension'])->add(new AuthMiddleware());
+    $group->get('/suspensions/student/{student_id}/history', [SuspensionController::class, 'getSuspensionHistory'])->add(new AuthMiddleware());
+    $group->get('/suspensions/active', [SuspensionController::class, 'getActiveSuspensions'])->add(new AuthMiddleware());
     $group->get('/reports/attendance-summary', [ReportsController::class, 'getAttendanceSummary'])->add(new AuthMiddleware());
     $group->get('/reports/student-attendance/{studentId}', [ReportsController::class, 'getStudentAttendance'])->add(new AuthMiddleware());
     $group->get('/reports/financial-overview', [ReportsController::class, 'getFinancialOverview'])->add(new AuthMiddleware());

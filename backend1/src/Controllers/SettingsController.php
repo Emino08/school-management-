@@ -230,8 +230,9 @@ class SettingsController
         try {
             $user = $request->getAttribute('user');
 
-            // Only admin can create backups
-            if ($user->role !== 'Admin') {
+            // Only admin or principal can create backups
+            $role = strtolower($user->role ?? '');
+            if (!in_array($role, ['admin', 'principal'], true)) {
                 $response->getBody()->write(json_encode([
                     'success' => false,
                     'message' => 'Unauthorized access'
@@ -302,8 +303,9 @@ class SettingsController
         try {
             $user = $request->getAttribute('user');
 
-            // Only admin can restore backups
-            if ($user->role !== 'Admin') {
+            // Only admin or principal can restore backups
+            $role = strtolower($user->role ?? '');
+            if (!in_array($role, ['admin', 'principal'], true)) {
                 $response->getBody()->write(json_encode([
                     'success' => false,
                     'message' => 'Unauthorized access'

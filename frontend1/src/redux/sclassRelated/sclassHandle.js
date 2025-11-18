@@ -35,10 +35,11 @@ export const getClassStudents = (id) => async (dispatch) => {
 
     try {
         const result = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/students/class/${id}`);
-        if (result.data.message) {
-            dispatch(getFailedTwo(result.data.message));
+        if (result.data?.success === false) {
+            dispatch(getFailedTwo(result.data.message || 'Unable to fetch students'));
         } else {
-            dispatch(getStudentsSuccess(result.data));
+            const students = Array.isArray(result.data?.students) ? result.data.students : Array.isArray(result.data) ? result.data : [];
+            dispatch(getStudentsSuccess(students));
         }
     } catch (error) {
         dispatch(getError(error));
@@ -94,12 +95,12 @@ export const getSubjectList = (id, address) => async (dispatch) => {
             url = `${import.meta.env.VITE_API_BASE_URL}/subjects`;
         }
         const result = await axios.get(url);
-        if (result.data.message) {
-            dispatch(getFailed(result.data.message));
+        if (result.data?.success === false) {
+            dispatch(getFailed(result.data.message || 'Unable to fetch subjects'));
         } else {
             // Extract the subjects array from the response
             const subjects = result.data.subjects || result.data;
-            dispatch(getSubjectsSuccess(subjects));
+            dispatch(getSubjectsSuccess(Array.isArray(subjects) ? subjects : []));
         }
     } catch (error) {
         dispatch(getError(error));

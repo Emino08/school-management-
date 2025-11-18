@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
   Dialog,
@@ -227,7 +227,7 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
   };
 
   // Filter subjects based on search query
-  const filteredSubjects = React.useMemo(() => {
+  const filteredSubjects = useMemo(() => {
     console.log('TeacherModal - Filtering subjects, total count:', allSubjects.length);
     console.log('TeacherModal - Search query:', searchQuery);
     

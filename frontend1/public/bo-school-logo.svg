@@ -1,0 +1,20 @@
+<svg width="320" height="360" viewBox="0 0 320 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="boschoolLogoTitle">
+  <title id="boschoolLogoTitle">Bo School Crest</title>
+  <defs>
+    <style>
+      .gold { fill: #d69b11; }
+      .stroke-gold { stroke: #d69b11; }
+      .text { font-family: 'Times New Roman', serif; font-size: 20px; letter-spacing: 1px; fill: #d69b11; font-weight: 600; }
+    </style>
+  </defs>
+  <path class="gold" d="M160 12 L278 60 L278 190 C278 250 232 310 160 332 C88 310 42 250 42 190 L42 60 Z"/>
+  <path d="M160 30 L256 68 L256 188 C256 235 223 284 160 306 C97 284 64 235 64 188 L64 68 Z" fill="#f5c250"/>
+  <rect x="95" y="38" width="30" height="250" fill="#d69b11"/>
+  <rect x="145" y="38" width="30" height="250" fill="#d69b11"/>
+  <rect x="195" y="38" width="30" height="250" fill="#d69b11"/>
+  <path class="gold" d="M60 210 L30 240 L88 288 L120 264 L140 300 L180 300 L200 264 L232 288 L290 240 L260 210" />
+  <path class="gold" d="M130 300 L112 330 C145 350 175 350 208 330 L190 300" />
+  <text class="text" x="58" y="250">MANNERS</text>
+  <text class="text" x="118" y="320">MAKETH</text>
+  <text class="text" x="202" y="250">MAN</text>
+</svg>

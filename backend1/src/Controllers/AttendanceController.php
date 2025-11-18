@@ -6,17 +6,20 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\Attendance;
 use App\Models\AcademicYear;
+use App\Models\ParentNotification;
 use App\Utils\Validator;
 
 class AttendanceController
 {
     private $attendanceModel;
     private $academicYearModel;
+    private $notificationModel;
 
     public function __construct()
     {
         $this->attendanceModel = new Attendance();
         $this->academicYearModel = new AcademicYear();
+        $this->notificationModel = new ParentNotification();
     }
 
     public function markAttendance(Request $request, Response $response)
@@ -73,6 +76,15 @@ class AttendanceController
             }
 
             $attendanceId = $this->attendanceModel->markAttendance(Validator::sanitize($data));
+
+            // Notify parents if student is absent
+            if ($data['status'] === 'absent') {
+                $this->notificationModel->notifyAttendanceMiss(
+                    $data['student_id'],
+                    $user->id,
+                    $data['date']
+                );
+            }
 
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Attendance marked successfully', 'attendance_id' => $attendanceId]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(201);

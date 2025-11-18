@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '@/redux/axiosConfig';
 import { FiX } from 'react-icons/fi';
@@ -160,6 +160,7 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
       case 'students': return 'student';
       case 'teachers': return 'teacher';
       case 'finance': return 'finance';
+      case 'principals': return 'principal';
       default: return 'user';
     }
   };
@@ -169,6 +170,7 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
       case 'students': return 'Student';
       case 'teachers': return 'Teacher';
       case 'finance': return 'Finance User';
+      case 'principals': return 'Principal';
       default: return 'User';
     }
   };

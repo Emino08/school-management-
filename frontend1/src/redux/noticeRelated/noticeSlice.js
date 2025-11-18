@@ -15,7 +15,7 @@ const noticeSlice = createSlice({
             state.loading = true;
         },
         getSuccess: (state, action) => {
-            state.noticesList = action.payload;
+            state.noticesList = Array.isArray(action.payload) ? action.payload : [];
             state.loading = false;
             state.error = null;
             state.response = null;
@@ -24,10 +24,12 @@ const noticeSlice = createSlice({
             state.response = action.payload;
             state.loading = false;
             state.error = null;
+            state.noticesList = []; // Ensure it's always an array
         },
         getError: (state, action) => {
             state.loading = false;
             state.error = action.payload;
+            state.noticesList = []; // Ensure it's always an array
         }
     },
 });

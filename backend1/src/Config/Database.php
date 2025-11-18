@@ -12,12 +12,23 @@ class Database
 
     private function __construct()
     {
-        $host = $_ENV['DB_HOST'];
-        $port = $_ENV['DB_PORT'];
-        $dbname = $_ENV['DB_NAME'];
-        $username = $_ENV['DB_USER'];
-        $password = $_ENV['DB_PASS'];
-        $charset = $_ENV['DB_CHARSET'];
+        $env = strtolower($_ENV['APP_ENV'] ?? 'production');
+        $isDevelopment = in_array($env, ['development', 'local', 'testing'], true);
+
+        $host = $_ENV['DB_HOST'] ?? 'localhost';
+        $port = $_ENV['DB_PORT'] ?? '3306';
+        $dbname = $_ENV['DB_NAME'] ?? 'school_management';
+        $username = $_ENV['DB_USER'] ?? 'root';
+        $password = $_ENV['DB_PASS'] ?? '';
+        $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
+
+        if ($isDevelopment) {
+            $host = $_ENV['DB_HOST_DEVELOPMENT'] ?? $host;
+            $port = $_ENV['DB_PORT_DEVELOPMENT'] ?? $port;
+            $dbname = $_ENV['DB_NAME_DEVELOPMENT'] ?? $dbname;
+            $username = $_ENV['DB_USER_DEVELOPMENT'] ?? $username;
+            $password = $_ENV['DB_PASS_DEVELOPMENT'] ?? $password;
+        }
 
         $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=$charset";
 

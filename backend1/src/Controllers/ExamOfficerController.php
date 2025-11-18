@@ -445,8 +445,9 @@ class ExamOfficerController
             // Don't allow password update through this endpoint
             unset($updateData['password']);
 
-            // Only admin can update can_approve_results and is_active
-            if ($user->role !== 'Admin') {
+            // Only admin/principal can update can_approve_results and is_active
+            $role = strtolower($user->role ?? '');
+            if (!in_array($role, ['admin', 'principal'], true)) {
                 unset($updateData['can_approve_results']);
                 unset($updateData['is_active']);
             }

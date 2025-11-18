@@ -12,7 +12,8 @@ class ActivityLogController
 
     public function __construct()
     {
-        $database = new \App\Config\Database();
+        // Use the singleton Database instance to reuse pooled connections
+        $database = \App\Config\Database::getInstance();
         $this->logger = new ActivityLogger($database->getConnection());
     }
 
@@ -25,7 +26,7 @@ class ActivityLogController
         $params = $request->getQueryParams();
 
         // Only admin can view all logs
-        if ($user->role !== 'Admin') {
+        if (!$this->hasAdminPortalAccess($user)) {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -74,7 +75,7 @@ class ActivityLogController
         $params = $request->getQueryParams();
 
         // Only admin can view stats
-        if ($user->role !== 'Admin') {
+        if (!$this->hasAdminPortalAccess($user)) {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -147,7 +148,7 @@ class ActivityLogController
         $params = $request->getQueryParams();
 
         // Only admin can export logs
-        if ($user->role !== 'Admin') {
+        if (!$this->hasAdminPortalAccess($user)) {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -201,5 +202,9 @@ class ActivityLogController
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
+
+    private function hasAdminPortalAccess($user): bool
+    {
+        return isset($user->role) && in_array(strtolower($user->role), ['admin', 'principal'], true);
     }
 }

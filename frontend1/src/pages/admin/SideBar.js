@@ -27,6 +27,7 @@ import {
   FiChevronRight,
 } from "react-icons/fi";
 import { MdVpnKey } from "react-icons/md";
+import BoSchoolLogo from "@/assets/Bo-School-logo.png";
 
 const SideBar = () => {
   const location = useLocation();
@@ -80,6 +81,16 @@ const SideBar = () => {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="flex flex-col items-center gap-1 px-4 pt-6 pb-4 text-center">
+        <img
+          src={BoSchoolLogo}
+          alt="Bo School crest"
+          className="h-14 w-auto drop-shadow-[0_10px_20px_rgba(0,0,0,0.45)]"
+        />
+        <p className="text-xs uppercase tracking-[0.4em] text-amber-500">Bo School</p>
+        <p className="text-[10px] text-gray-500">Manners Maketh Man</p>
+      </div>
+      <Separator className="mb-2" />
       {/* Quick Access */}
       <div className="px-2 py-2 space-y-0.5">
         <NavItem to="/" icon={FiHome} startsWith={false}>

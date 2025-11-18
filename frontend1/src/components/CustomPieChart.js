@@ -66,7 +66,9 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     );
 };
 
-const CustomPieChart = ({ data }) => {
+const CustomPieChart = React.memo(({ data }) => {
+    if (!data || data.length === 0) return null;
+    
     return (
         <ResponsiveContainer width="100%" height={400}>
             <PieChart>
@@ -87,6 +89,8 @@ const CustomPieChart = ({ data }) => {
             </PieChart>
         </ResponsiveContainer>
     );
-};
+});
+
+CustomPieChart.displayName = 'CustomPieChart';
 
 export default CustomPieChart;

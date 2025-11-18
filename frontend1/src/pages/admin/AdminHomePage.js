@@ -14,12 +14,9 @@ import Fees from "../../assets/img4.png";
 import CountUp from 'react-countup';
 import { useDispatch, useSelector } from 'react-redux';
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
-import { useEffect, useState } from 'react';
-import { getAllSclasses } from '../../redux/sclassRelated/sclassHandle';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import axios from '@/redux/axiosConfig';
-import { getAllStudents } from '../../redux/studentRelated/studentHandle';
-import { getAllTeachers } from '../../redux/teacherRelated/teacherHandle';
-import { getAllAcademicYears } from '../../redux/academicYearRelated/academicYearHandle';
+import { getAllAcademicYears } from '@/redux/academicYearRelated/academicYearHandle.js';
 import {
   MdSchool,
   MdClass,
@@ -38,18 +35,54 @@ import {
 } from 'react-icons/md';
 import { useNavigate } from 'react-router-dom';
 
+const normalizeCount = (value) => {
+    const parsedValue = Number(value);
+    return Number.isFinite(parsedValue) ? parsedValue : 0;
+};
+
 const AdminHomePage = () => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const [showGuide, setShowGuide] = useState(false);
+    const hasFetchedInitialData = useRef(false);
 
-    const { studentsList } = useSelector((state) => state.student);
-    const { sclassesList } = useSelector((state) => state.sclass);
-    const { teachersList } = useSelector((state) => state.teacher);
-    const { academicYearData, academicYearLoading } = useSelector((state) => state.academicYear);
-    const { currentUser } = useSelector(state => state.user);
+    const { academicYearData } = useSelector((state) => state.academicYear);
+    const { currentUser: reduxUser } = useSelector(state => state.user);
 
-    const adminID = currentUser?._id || currentUser?.id;
+    // Memoize current user to prevent unnecessary re-renders
+    const currentUser = useMemo(() => {
+        if (reduxUser) return reduxUser;
+        
+        try {
+            const userStr = localStorage.getItem('user');
+            if (userStr) return JSON.parse(userStr);
+        } catch (e) {
+            console.error('Failed to parse user from localStorage:', e);
+        }
+        return null;
+    }, [reduxUser]);
+
+    // Memoize adminID
+    const adminID = useMemo(() => 
+        currentUser?.admin?.id || currentUser?._id || currentUser?.id,
+        [currentUser]
+    );
+
+    // Memoize token validation
+    const tokenHasAdminId = useMemo(() => {
+        if (!currentUser?.token) return false;
+        
+        try {
+            const tokenParts = currentUser.token.split('.');
+            if (tokenParts.length === 3) {
+                const payload = JSON.parse(atob(tokenParts[1]));
+                return 'admin_id' in payload;
+            }
+        } catch (e) {
+            console.error('Failed to decode token:', e);
+        }
+        return false;
+    }, [currentUser?.token]);
 
     const [dashboardStats, setDashboardStats] = useState(null);
     const [dashboardCharts, setDashboardCharts] = useState(null);
@@ -57,113 +90,159 @@ const AdminHomePage = () => {
     const [chartEnd, setChartEnd] = useState('');
     const [feesTerm, setFeesTerm] = useState('ALL');
     const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
 
-    useEffect(() => {
-        console.log('=== INITIAL LOAD ===');
-        console.log('Current User:', currentUser);
-        console.log('Admin ID:', adminID);
-        console.log('academicYearLoading:', academicYearLoading);
-        console.log('academicYearData:', academicYearData);
-        if (adminID) {
-            console.log('Dispatching getAllAcademicYears...');
-            dispatch(getAllStudents(adminID));
-            dispatch(getAllSclasses(adminID, "Sclass"));
-            dispatch(getAllTeachers(adminID));
-            dispatch(getAllAcademicYears());
-            // Fetch backend dashboard stats including attendance
-            (async () => {
-              try {
-                const res = await axios.get(`${API_URL}/admin/stats`, { headers: { Authorization: `Bearer ${currentUser?.token}` } });
-                if (res.data?.success) setDashboardStats(res.data.stats);
-              } catch (e) {
-                console.warn('Failed to fetch admin stats', e);
-              }
-              try {
-                const params = new URLSearchParams();
-                if (chartStart) params.set('start', chartStart);
-                if (chartEnd) params.set('end', chartEnd);
-                if (feesTerm && feesTerm !== 'ALL') params.set('term', feesTerm);
-                if (attDate) params.set('date', attDate);
-                if (!chartStart && !chartEnd) params.set('days', '30');
-                const charts = await axios.get(`${API_URL}/admin/charts?${params.toString()}`, { headers: { Authorization: `Bearer ${currentUser?.token}` } });
-                if (charts.data?.success) setDashboardCharts(charts.data.charts);
-              } catch (e) {
-                console.warn('Failed to fetch admin charts', e);
-              }
-            })();
-        } else {
-            console.warn('No admin ID found - user might not be logged in');
+    // Memoize fetch function to prevent recreation on every render
+    const fetchDashboardData = useCallback(async (forceRefresh = false) => {
+        if (!adminID || !currentUser?.token) {
+            return;
         }
-    }, [adminID, dispatch, chartStart, chartEnd, feesTerm, attDate]);
 
-    const numberOfStudents = dashboardStats?.total_students ?? (Array.isArray(studentsList) ? studentsList.length : 0);
-    const numberOfClasses = dashboardStats?.total_classes ?? (Array.isArray(sclassesList) ? sclassesList.length : 0);
-    const numberOfTeachers = dashboardStats?.total_teachers ?? (Array.isArray(teachersList) ? teachersList.length : 0);
+        setIsRefreshing(true);
 
-    // Get academic years from Redux or empty array
-    const academicYears = Array.isArray(academicYearData) ? academicYearData : [];
-    
-    console.log('=== PROCESSING ACADEMIC YEARS ===');
-    console.log('Raw academicYearData:', academicYearData);
-    console.log('Is Array?', Array.isArray(academicYearData));
-    console.log('academicYears length:', academicYears.length);
-    
-    // Check for current year - use loose equality to match AcademicYearSelector logic
-    let currentYear = academicYears.find(year => {
-        console.log('Checking year:', year);
-        // Use loose equality like in AcademicYearSelector (line 32)
-        const isCurrent = year.is_current == 1 || year.is_current === true;
-        console.log(`Year ${year.year_name}: is_current=${year.is_current}, matches=${isCurrent}`);
-        return isCurrent;
-    });
-    
-    // Fallback: If no current year found in Redux, try localStorage
-    if (!currentYear && academicYears.length === 0) {
-        console.log('No data in Redux, checking localStorage...');
+        const statsUrl = forceRefresh
+            ? `${API_URL}/admin/stats?refresh=true`
+            : `${API_URL}/admin/stats`;
+
+        const params = new URLSearchParams();
+        if (chartStart) params.set('start', chartStart);
+        if (chartEnd) params.set('end', chartEnd);
+        if (feesTerm && feesTerm !== 'ALL') params.set('term', feesTerm);
+        if (attDate) params.set('date', attDate);
+        if (!chartStart && !chartEnd) params.set('days', '30');
+
+        const query = params.toString();
+        const chartsUrl = query
+            ? `${API_URL}/admin/charts?${query}`
+            : `${API_URL}/admin/charts`;
+
+        const headers = { Authorization: `Bearer ${currentUser.token}` };
+
         try {
-            const storedYear = localStorage.getItem('currentAcademicYear');
-            if (storedYear) {
-                currentYear = JSON.parse(storedYear);
-                console.log('Found current year in localStorage:', currentYear);
+            const [statsResult, chartsResult] = await Promise.allSettled([
+                axios.get(statsUrl, { headers }),
+                axios.get(chartsUrl, { headers })
+            ]);
+
+            if (statsResult.status === 'fulfilled') {
+                if (statsResult.value.data?.success) {
+                    setDashboardStats(statsResult.value.data.stats);
+                } else {
+                    console.error('Stats API error:', statsResult.value.data?.message || 'Unknown error');
+                }
+            } else {
+                console.error('Stats API failed:', statsResult.reason?.response?.data?.message || statsResult.reason?.message);
+            }
+
+            if (chartsResult.status === 'fulfilled') {
+                if (chartsResult.value.data?.success) {
+                    setDashboardCharts(chartsResult.value.data.charts);
+                } else {
+                    console.error('Charts API error:', chartsResult.value.data?.message || 'Unknown error');
+                }
+            } else {
+                console.error('Charts API failed:', chartsResult.reason?.response?.data?.message || chartsResult.reason?.message);
             }
         } catch (error) {
-            console.error('Error reading from localStorage:', error);
+            console.error('Dashboard data fetch failed:', error.message);
+        } finally {
+            setIsRefreshing(false);
         }
-    }
-    
-    console.log('Final currentYear:', currentYear);
+    }, [adminID, currentUser?.token, chartStart, chartEnd, feesTerm, attDate, API_URL]);
 
-    // Debug logging
+    // Single initial load effect - runs only once
     useEffect(() => {
-        console.log('=== ACADEMIC YEAR DEBUG ===');
-        console.log('academicYearData:', academicYearData);
-        console.log('academicYears array:', academicYears);
-        console.log('currentYear found:', currentYear);
-        if (academicYears.length > 0) {
-            academicYears.forEach((year, index) => {
-                const isCurrentNum = Number(year.is_current);
-                console.log(`Year ${index}:`, {
-                    id: year.id,
-                    name: year.year_name,
-                    is_current: year.is_current,
-                    type: typeof year.is_current,
-                    is_current_as_number: isCurrentNum,
-                    will_be_selected: isCurrentNum === 1
-                });
-            });
-        }
-        console.log('=== END DEBUG ===');
-    }, [academicYearData, academicYears, currentYear]);
+        if (hasFetchedInitialData.current || !adminID) return;
+        
+        hasFetchedInitialData.current = true;
+        
+        // Dispatch Redux actions
+        dispatch(getAllAcademicYears());
+        
+        // Fetch dashboard data
+        fetchDashboardData(true);
+    }, [adminID, dispatch, fetchDashboardData]);
 
-    // Calculate additional statistics
-    const totalSubjects = dashboardStats?.total_subjects ?? (
-        Array.isArray(sclassesList)
-            ? sclassesList.reduce((sum, sclass) => sum + (sclass.subject_count || 0), 0)
-            : 0
+    // Separate effect for filter changes - debounced
+    useEffect(() => {
+        if (!hasFetchedInitialData.current) return;
+        
+        const timer = setTimeout(() => {
+            fetchDashboardData(false);
+        }, 500); // 500ms debounce
+        
+        return () => clearTimeout(timer);
+    }, [chartStart, chartEnd, feesTerm, attDate, fetchDashboardData]);
+
+    // Memoize computed statistics
+    const numberOfStudents = useMemo(
+        () => normalizeCount(dashboardStats?.total_students),
+        [dashboardStats?.total_students]
     );
 
-    const stats = [
+    const numberOfClasses = useMemo(
+        () => normalizeCount(dashboardStats?.total_classes),
+        [dashboardStats?.total_classes]
+    );
+
+    const numberOfTeachers = useMemo(
+        () => normalizeCount(dashboardStats?.total_teachers),
+        [dashboardStats?.total_teachers]
+    );
+
+    // Memoize academic years
+    const academicYears = useMemo(() => 
+        Array.isArray(academicYearData) ? academicYearData : [],
+        [academicYearData]
+    );
+    
+    // Memoize current year lookup
+    const currentYear = useMemo(() => {
+        let year = academicYears.find(y => y.is_current == 1 || y.is_current === true);
+        
+        if (!year && academicYears.length === 0) {
+            try {
+                const storedYear = localStorage.getItem('currentAcademicYear');
+                if (storedYear) year = JSON.parse(storedYear);
+            } catch (error) {
+                console.error('Error reading from localStorage:', error);
+            }
+        }
+        
+        return year;
+    }, [academicYears]);
+    
+    // Memoize total subjects calculation
+    const totalSubjects = useMemo(
+        () => normalizeCount(dashboardStats?.total_subjects),
+        [dashboardStats?.total_subjects]
+    );
+
+    // Memoize handlers
+    const handleNavigate = useCallback((route) => {
+        navigate(route);
+    }, [navigate]);
+
+    const handleRefresh = useCallback(() => {
+        fetchDashboardData(true);
+    }, [fetchDashboardData]);
+
+    const handleLogout = useCallback(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = '/';
+    }, []);
+
+    const handleResetFilters = useCallback(() => {
+        setChartStart('');
+        setChartEnd('');
+        setFeesTerm('ALL');
+        setAttDate(new Date().toISOString().split('T')[0]);
+    }, []);
+
+    // Memoize stats array
+    const stats = useMemo(() => [
         {
             title: 'Total Students',
             value: numberOfStudents,
@@ -173,6 +252,7 @@ const AdminHomePage = () => {
             lightColor: 'bg-blue-50',
             textColor: 'text-blue-600',
             route: '/Admin/students-management',
+            action: () => handleNavigate('/Admin/students-management'),
             description: 'Enrolled students'
         },
         {
@@ -184,6 +264,7 @@ const AdminHomePage = () => {
             lightColor: 'bg-purple-50',
             textColor: 'text-purple-600',
             route: '/Admin/classes-management',
+            action: () => handleNavigate('/Admin/classes-management'),
             description: 'Active classes'
         },
         {
@@ -195,6 +276,7 @@ const AdminHomePage = () => {
             lightColor: 'bg-green-50',
             textColor: 'text-green-600',
             route: '/Admin/teachers-management',
+            action: () => handleNavigate('/Admin/teachers-management'),
             description: 'Teaching staff'
         },
         {
@@ -206,19 +288,47 @@ const AdminHomePage = () => {
             lightColor: 'bg-orange-50',
             textColor: 'text-orange-600',
             route: '/Admin/subjects-management',
+            action: () => handleNavigate('/Admin/subjects-management'),
             description: 'Available subjects'
         }
-    ];
+    ], [numberOfStudents, numberOfClasses, numberOfTeachers, totalSubjects, handleNavigate]);
 
-    const quickActions = [
-        { title: 'Student Management', route: '/Admin/students-management', icon: MdSchool, color: 'bg-blue-600' },
-        { title: 'Class Management', route: '/Admin/classes-management', icon: MdClass, color: 'bg-purple-600' },
-        { title: 'Teacher Management', route: '/Admin/teachers-management', icon: MdPeople, color: 'bg-green-600' },
-        { title: 'Post Notice', route: '/Admin/addnotice', icon: MdInfo, color: 'bg-red-600' }
-    ];
+    // Memoize quick actions
+    const quickActions = useMemo(() => [
+        { title: 'Student Management', route: '/Admin/students-management', icon: MdSchool, color: 'bg-blue-600', action: () => handleNavigate('/Admin/students-management') },
+        { title: 'Class Management', route: '/Admin/classes-management', icon: MdClass, color: 'bg-purple-600', action: () => handleNavigate('/Admin/classes-management') },
+        { title: 'Teacher Management', route: '/Admin/teachers-management', icon: MdPeople, color: 'bg-green-600', action: () => handleNavigate('/Admin/teachers-management') },
+        { title: 'Post Notice', route: '/Admin/addnotice', icon: MdInfo, color: 'bg-red-600', action: () => handleNavigate('/Admin/addnotice') }
+    ], [handleNavigate]);
 
     return (
         <div className="container max-w-7xl mx-auto px-4 space-y-6">
+            {/* Token Warning Banner */}
+            {!tokenHasAdminId && (
+                <Card className="bg-red-50 border-red-300">
+                    <CardContent className="pt-6">
+                        <div className="flex items-center gap-3">
+                            <MdWarning className="h-8 w-8 text-red-600 flex-shrink-0" />
+                            <div className="flex-1">
+                                <h3 className="font-semibold text-red-900 text-lg">Authentication Update Required</h3>
+                                <p className="text-sm text-red-700 mt-1">
+                                    Your login token needs to be updated. Please log out and log back in to see correct dashboard statistics.
+                                </p>
+                                <p className="text-xs text-red-600 mt-2">
+                                    <strong>Why?</strong> The system has been updated to improve data security. A fresh login will generate a new authentication token with the required information.
+                                </p>
+                            </div>
+                            <Button
+                                onClick={handleLogout}
+                                className="bg-red-600 hover:bg-red-700 flex-shrink-0"
+                            >
+                                Log Out Now
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Welcome Header */}
             <div className="flex items-center justify-between">
                 <div>
@@ -229,18 +339,29 @@ const AdminHomePage = () => {
                         Here's what's happening in your school today
                     </p>
                 </div>
-                <Button
-                    onClick={() => setShowGuide(!showGuide)}
-                    variant="outline"
-                    className="hidden md:flex"
-                >
-                    <MdInfo className="mr-2 h-4 w-4" />
-                    {showGuide ? 'Hide Guide' : 'Show Guide'}
-                </Button>
+                <div className="flex gap-2">
+                    <Button
+                        onClick={handleRefresh}
+                        variant="outline"
+                        disabled={isRefreshing}
+                        className="hidden md:flex"
+                    >
+                        <MdTrendingUp className={`mr-2 h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+                    </Button>
+                    <Button
+                        onClick={() => setShowGuide(prev => !prev)}
+                        variant="outline"
+                        className="hidden md:flex"
+                    >
+                        <MdInfo className="mr-2 h-4 w-4" />
+                        {showGuide ? 'Hide Guide' : 'Show Guide'}
+                    </Button>
+                </div>
             </div>
 
             {/* Current Academic Year */}
-            {academicYearLoading && !currentYear ? (
+            {!currentYear && academicYears.length === 0 ? (
                 <Card className="bg-gray-50 border-gray-200">
                     <CardContent className="pt-6">
                         <div className="flex items-center justify-center">
@@ -266,7 +387,7 @@ const AdminHomePage = () => {
                             </div>
                             <Button
                                 variant="secondary"
-                                onClick={() => navigate('/Admin/academic-years')}
+                                onClick={() => handleNavigate('/Admin/academic-years')}
                             >
                                 Manage
                                 <MdArrowForward className="ml-2 h-4 w-4" />
@@ -286,7 +407,7 @@ const AdminHomePage = () => {
                                 </div>
                             </div>
                             <Button
-                                onClick={() => navigate('/Admin/academic-years')}
+                                onClick={() => handleNavigate('/Admin/academic-years')}
                                 className="bg-yellow-600 hover:bg-yellow-700"
                             >
                                 Set Up Now
@@ -307,20 +428,35 @@ const AdminHomePage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {stats.map((stat, index) => {
                     const Icon = stat.icon;
+                    const statValue = normalizeCount(stat.value);
                     return (
                         <Card
                             key={index}
                             className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group"
-                            onClick={() => navigate(stat.route)}
+                            onClick={stat.action}
                         >
                             <CardContent className="p-0">
                                 <div className={`${stat.lightColor} p-4 flex justify-end`}>
                                     <img src={stat.image} alt={stat.title} className="w-20 h-20 object-contain opacity-80" />
                                 </div>
                                 <div className="p-6">
-                                    <p className="text-gray-600 text-sm mb-2">{stat.title}</p>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-gray-600 text-sm">{stat.title}</p>
+                                        {dashboardStats && (
+                                            <Badge className="bg-green-100 text-green-800 text-xs">Live</Badge>
+                                        )}
+                                    </div>
                                     <div className="flex items-center justify-between">
-                                        <span className="text-3xl sm:text-4xl font-bold"><CountUp end={Number(stat?.value ?? 0)} duration={1.2} separator="," preserveValue redraw>{({ countUpRef }) => (<span ref={countUpRef} />)}</CountUp></span>
+                                        <span className="text-3xl sm:text-4xl font-bold">
+                                            <CountUp
+                                                key={`${stat.title}-${statValue}`}
+                                                end={statValue}
+                                                duration={1}
+                                                separator=","
+                                            >
+                                                {({ countUpRef }) => (<span ref={countUpRef} />)}
+                                            </CountUp>
+                                        </span>
                                         <div className={`w-10 h-10 ${stat.color} rounded-full flex items-center justify-center group-hover:scale-110 transition-transform`}>
                                             <Icon className="h-5 w-5 text-white" />
                                         </div>
@@ -348,7 +484,7 @@ const AdminHomePage = () => {
                                     key={index}
                                     variant="outline"
                                     className="h-24 flex flex-col items-center justify-center gap-2 hover:border-purple-500 hover:bg-purple-50"
-                                    onClick={() => navigate(action.route)}
+                                    onClick={action.action}
                                 >
                                     <div className={`w-10 h-10 ${action.color} rounded-full flex items-center justify-center`}>
                                         <Icon className="h-5 w-5 text-white" />
@@ -473,7 +609,7 @@ const AdminHomePage = () => {
                                 <MdAttachMoney className="h-5 w-5 text-green-600" />
                             </div>
                             <p className="text-2xl font-bold text-green-900">
-                                ₦{(dashboardStats?.fees?.total_collected ?? 0).toLocaleString()}
+                                SLE {(dashboardStats?.fees?.total_collected ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                             <p className="text-xs text-green-600 mt-1">All time collections</p>
                         </div>
@@ -484,7 +620,7 @@ const AdminHomePage = () => {
                                 <MdWarning className="h-5 w-5 text-yellow-600" />
                             </div>
                             <p className="text-2xl font-bold text-yellow-900">
-                                ₦{(dashboardStats?.fees?.total_pending ?? 0).toLocaleString()}
+                                SLE {(dashboardStats?.fees?.total_pending ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                             <p className="text-xs text-yellow-600 mt-1">Outstanding payments</p>
                         </div>
@@ -495,7 +631,7 @@ const AdminHomePage = () => {
                                 <MdTrendingUp className="h-5 w-5 text-blue-600" />
                             </div>
                             <p className="text-2xl font-bold text-blue-900">
-                                {dashboardStats?.fees?.collection_rate ?? 0}%
+                                {(dashboardStats?.fees?.collection_rate ?? 0).toFixed(2)}%
                             </p>
                             <p className="text-xs text-blue-600 mt-1">Payment completion</p>
                         </div>
@@ -506,7 +642,7 @@ const AdminHomePage = () => {
                                 <MdCalendarToday className="h-5 w-5 text-purple-600" />
                             </div>
                             <p className="text-2xl font-bold text-purple-900">
-                                ₦{(dashboardStats?.fees?.this_month ?? 0).toLocaleString()}
+                                SLE {(dashboardStats?.fees?.this_month ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                             <p className="text-xs text-purple-600 mt-1">Current month revenue</p>
                         </div>
@@ -669,7 +805,7 @@ const AdminHomePage = () => {
                     <Input type="date" value={attDate} onChange={e => setAttDate(e.target.value)} />
                   </div>
                   <div>
-                    <Button variant="outline" onClick={() => { setChartStart(''); setChartEnd(''); setFeesTerm('ALL'); setAttDate(new Date().toISOString().split('T')[0]); }}>Reset</Button>
+                    <Button variant="outline" onClick={handleResetFilters}>Reset</Button>
                   </div>
                 </div>
               </CardContent>
@@ -685,19 +821,25 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={dashboardCharts.attendance_trend}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
-                          <YAxis />
-                          <Tooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="present" stroke="#16a34a" name="Present" />
-                          <Line type="monotone" dataKey="absent" stroke="#dc2626" name="Absent" />
-                          <Line type="monotone" dataKey="late" stroke="#f59e0b" name="Late" />
-                          <Line type="monotone" dataKey="excused" stroke="#3b82f6" name="Excused" />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.attendance_trend && dashboardCharts.attendance_trend.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <LineChart data={dashboardCharts.attendance_trend}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Line type="monotone" dataKey="present" stroke="#16a34a" name="Present" />
+                            <Line type="monotone" dataKey="absent" stroke="#dc2626" name="Absent" />
+                            <Line type="monotone" dataKey="late" stroke="#f59e0b" name="Late" />
+                            <Line type="monotone" dataKey="excused" stroke="#3b82f6" name="Excused" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No attendance data available for the selected period
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -708,15 +850,21 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardCharts.class_student_counts}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="class_name" interval={0} angle={-30} textAnchor="end" height={80} />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="student_count" fill="#7c3aed" name="Students" />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.class_student_counts && dashboardCharts.class_student_counts.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <BarChart data={dashboardCharts.class_student_counts}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="class_name" interval={0} angle={-30} textAnchor="end" height={80} />
+                            <YAxis />
+                            <Tooltip />
+                            <Bar dataKey="student_count" fill="#7c3aed" name="Students" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No class enrollment data available
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -732,16 +880,22 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={dashboardCharts.fees_trend}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
-                          <YAxis />
-                          <Tooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="amount" stroke="#10b981" name="Amount" />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.fees_trend && dashboardCharts.fees_trend.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <LineChart data={dashboardCharts.fees_trend}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Line type="monotone" dataKey="amount" stroke="#10b981" name="Amount" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No fee payment data available for this period
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -752,15 +906,21 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardCharts.results_publications}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="count" fill="#ef4444" name="Publications" />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.results_publications && dashboardCharts.results_publications.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <BarChart data={dashboardCharts.results_publications}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" />
+                            <YAxis />
+                            <Tooltip />
+                            <Bar dataKey="count" fill="#ef4444" name="Publications" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No result publications in this period
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -776,15 +936,21 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardCharts.teacher_load}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="teacher_name" interval={0} angle={-20} textAnchor="end" height={80} />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="subjects" fill="#3b82f6" name="Subjects" />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.teacher_load && dashboardCharts.teacher_load.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <BarChart data={dashboardCharts.teacher_load}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="teacher_name" interval={0} angle={-20} textAnchor="end" height={80} />
+                            <YAxis />
+                            <Tooltip />
+                            <Bar dataKey="subjects" fill="#3b82f6" name="Subjects" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No teacher assignments available
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -800,19 +966,25 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={dashboardCharts.fees_by_term}
-                               dataKey="amount"
-                               nameKey="term"
-                               cx="50%" cy="50%" outerRadius={80} label>
-                            {(dashboardCharts.fees_by_term || []).map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={["#7c3aed", "#16a34a", "#f59e0b"][index % 3]} />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.fees_by_term && dashboardCharts.fees_by_term.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <PieChart>
+                            <Pie data={dashboardCharts.fees_by_term}
+                                 dataKey="amount"
+                                 nameKey="term"
+                                 cx="50%" cy="50%" outerRadius={80} label>
+                              {dashboardCharts.fees_by_term.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={["#7c3aed", "#16a34a", "#f59e0b"][index % 3]} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No fee payments by term available
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -823,15 +995,21 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardCharts.attendance_by_class}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="class_name" interval={0} angle={-20} textAnchor="end" height={80} />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="rate" fill="#10b981" name="Present %" />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.attendance_by_class && dashboardCharts.attendance_by_class.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <BarChart data={dashboardCharts.attendance_by_class}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="class_name" interval={0} angle={-20} textAnchor="end" height={80} />
+                            <YAxis />
+                            <Tooltip />
+                            <Bar dataKey="rate" fill="#10b981" name="Present %" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No attendance data for today
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -847,16 +1025,22 @@ const AdminHomePage = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={dashboardCharts.avg_grades_trend}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
-                          <YAxis domain={[0, 100]} />
-                          <Tooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="avg_score" stroke="#8b5cf6" name="Average Score" />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      {dashboardCharts.avg_grades_trend && dashboardCharts.avg_grades_trend.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={250} minHeight={250}>
+                          <LineChart data={dashboardCharts.avg_grades_trend}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" />
+                            <YAxis domain={[0, 100]} />
+                            <Tooltip />
+                            <Legend />
+                            <Line type="monotone" dataKey="avg_score" stroke="#8b5cf6" name="Average Score" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No exam results available for this period
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -867,4 +1051,3 @@ const AdminHomePage = () => {
 };
 
 export default AdminHomePage;
-

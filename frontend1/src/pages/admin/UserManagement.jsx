@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '@/redux/axiosConfig';
 import UserFormModal from './userManagement/UserFormModal';
@@ -11,6 +11,8 @@ import {
 
 const UserManagement = () => {
   const { currentUser } = useSelector((state) => state.user);
+  const currentRole = (currentUser?.role || '').toLowerCase();
+  const canManagePrincipals = currentRole === 'admin';
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({});
@@ -23,7 +25,7 @@ const UserManagement = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [userType, setUserType] = useState('all');
+  const disablePrincipalActions = activeTab === 'principals' && !canManagePrincipals;
 
   useEffect(() => {
     fetchUserStats();
@@ -56,6 +58,7 @@ const UserManagement = () => {
         students: 'student',
         teachers: 'teacher',
         finance: 'finance',
+        principals: 'principal',
         overview: 'all'
       };
 
@@ -88,6 +91,10 @@ const UserManagement = () => {
   };
 
   const handleCreateUser = async (formData) => {
+    if (activeTab === 'principals' && !canManagePrincipals) {
+      toast.error('Only administrators can create principal accounts');
+      return;
+    }
     try {
       const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/user-management/users`, formData);
 
@@ -106,6 +113,10 @@ const UserManagement = () => {
   };
 
   const handleUpdateUser = async (formData) => {
+    if (activeTab === 'principals' && !canManagePrincipals) {
+      toast.error('Only administrators can update principal accounts');
+      return;
+    }
     try {
       const response = await axios.put(
         `${import.meta.env.VITE_API_BASE_URL}/user-management/users/${editingUser.id}`,
@@ -127,6 +138,10 @@ const UserManagement = () => {
   };
 
   const handleDeleteUser = async (userId, userType) => {
+    if (userType === 'principal' && !canManagePrincipals) {
+      toast.error('Only administrators can delete principal accounts');
+      return;
+    }
     if (!window.confirm('Are you sure you want to delete this user?')) {
       return;
     }
@@ -183,7 +198,8 @@ const UserManagement = () => {
       const userTypeMap = {
         students: 'student',
         teachers: 'teacher',
-        finance: 'finance'
+        finance: 'finance',
+        principals: 'principal'
       };
 
       const response = await axios.post(
@@ -214,7 +230,8 @@ const UserManagement = () => {
     { id: 'overview', label: 'Overview', icon: FiUsers },
     { id: 'students', label: 'Students', icon: FiBook },
     { id: 'teachers', label: 'Teachers', icon: FiUsers },
-    { id: 'finance', label: 'Finance Users', icon: FiDollarSign }
+    { id: 'finance', label: 'Finance Users', icon: FiDollarSign },
+    { id: 'principals', label: 'Principals', icon: FiShield }
   ];
 
   return (
@@ -226,7 +243,7 @@ const UserManagement = () => {
             User Management
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Manage students, teachers, finance users, and permissions
+            Manage students, teachers, finance users, principals, and permissions
           </p>
         </div>
 
@@ -294,6 +311,13 @@ const UserManagement = () => {
               icon={FiShield}
               color="orange"
             />
+            <StatCard
+              title="Principal Accounts"
+              value={stats.total_principals || 0}
+              icon={FiUserPlus}
+              color="amber"
+              onClick={() => setActiveTab('principals')}
+            />
           </div>
         )}
 
@@ -341,17 +365,22 @@ const UserManagement = () => {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
+                      if (disablePrincipalActions) {
+                        toast.error('Only administrators can manage principal accounts');
+                        return;
+                      }
                       setEditingUser(null);
                       setShowCreateModal(true);
                     }}
                     className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700
-                      text-white rounded-lg transition-colors"
+                      text-white rounded-lg transition-colors disabled:opacity-60"
+                    disabled={disablePrincipalActions}
                   >
                     <FiUserPlus className="w-5 h-5" />
                     Add User
                   </button>
 
-                  {selectedUsers.length > 0 && (
+                  {selectedUsers.length > 0 && !disablePrincipalActions && (
                     <button
                       onClick={() => handleBulkOperation('delete')}
                       className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700
@@ -364,6 +393,12 @@ const UserManagement = () => {
                 </div>
               </div>
             </div>
+
+            {disablePrincipalActions && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
+                Principal accounts are managed by the super administrator. Please contact your admin for changes.
+              </div>
+            )}
 
             {/* User Table */}
             {loading ? (
@@ -386,11 +421,16 @@ const UserManagement = () => {
                   setSelectedUsers(selectAll ? users.map((u) => u.id) : []);
                 }}
                 onEdit={(user) => {
+                  if (activeTab === 'principals' && !canManagePrincipals) {
+                    toast.error('Only administrators can manage principal accounts');
+                    return;
+                  }
                   setEditingUser(user);
                   setShowEditModal(true);
                 }}
                 onDelete={handleDeleteUser}
                 onToggleExamOfficer={handleToggleExamOfficer}
+                canManagePrincipals={canManagePrincipals}
               />
             )}
 
@@ -448,7 +488,8 @@ const StatCard = ({ title, value, icon: Icon, color, onClick }) => {
     blue: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
     green: 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
     purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300',
-    orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300'
+    orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300',
+    amber: 'bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-300'
   };
 
   return (
@@ -478,15 +519,19 @@ const UserTable = ({
   onSelectAll,
   onEdit,
   onDelete,
-  onToggleExamOfficer
+  onToggleExamOfficer,
+  canManagePrincipals
 }) => {
   const allSelected = users.length > 0 && users.every((u) => selectedUsers.includes(u.id));
+  const isPrincipalTab = userType === 'principals';
+  const allowPrincipalActions = !isPrincipalTab || canManagePrincipals;
 
   const getUserTypeName = () => {
     switch (userType) {
       case 'students': return 'student';
       case 'teachers': return 'teacher';
       case 'finance': return 'finance';
+      case 'principals': return 'principal';
       default: return 'user';
     }
   };
@@ -501,8 +546,12 @@ const UserTable = ({
                 <input
                   type="checkbox"
                   checked={allSelected}
-                  onChange={(e) => onSelectAll(e.target.checked)}
+                  onChange={(e) => {
+                    if (!allowPrincipalActions && isPrincipalTab) return;
+                    onSelectAll(e.target.checked);
+                  }}
                   className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  disabled={!allowPrincipalActions && isPrincipalTab}
                 />
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -511,6 +560,11 @@ const UserTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Email
               </th>
+              {userType === 'principals' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Phone
+                </th>
+              )}
               {userType === 'students' && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   ID Number
@@ -543,20 +597,36 @@ const UserTable = ({
                   <input
                     type="checkbox"
                     checked={selectedUsers.includes(user.id)}
-                    onChange={() => onSelectUser(user.id)}
+                    onChange={() => {
+                      if (!allowPrincipalActions && isPrincipalTab) return;
+                      onSelectUser(user.id);
+                    }}
                     className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    disabled={!allowPrincipalActions && isPrincipalTab}
                   />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">
                     {user.name}
                   </div>
+                  {userType === 'principals' && (
+                    <div className="text-xs text-purple-600 dark:text-purple-300">
+                      {user.role || 'Principal'}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-600 dark:text-gray-400">
                     {user.email || 'N/A'}
                   </div>
                 </td>
+                {userType === 'principals' && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.phone || 'N/A'}
+                    </div>
+                  </td>
+                )}
                 {userType === 'students' && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -599,22 +669,26 @@ const UserTable = ({
                   </td>
                 )}
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onEdit(user)}
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                      title="Edit"
-                    >
-                      <FiEdit2 className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(user.id, getUserTypeName())}
-                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                      title="Delete"
-                    >
-                      <FiTrash2 className="w-5 h-5" />
-                    </button>
-                  </div>
+                  {allowPrincipalActions ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onEdit(user)}
+                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        title="Edit"
+                      >
+                        <FiEdit2 className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(user.id, getUserTypeName())}
+                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                        title="Delete"
+                      >
+                        <FiTrash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-400 dark:text-gray-500">View only</span>
+                  )}
                 </td>
               </tr>
             ))}

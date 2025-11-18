@@ -8,6 +8,7 @@ use App\Models\Admin;
 use App\Models\FinanceUser;
 use App\Models\ExamOfficer;
 use App\Models\AcademicYear;
+use App\Utils\Validator;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -37,7 +38,7 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
             $query = $request->getQueryParams();
             $userType = $query['user_type'] ?? 'all';
             $search = trim($query['search'] ?? '');
@@ -118,10 +119,30 @@ class UserManagementController
                     ];
                     break;
 
+                case 'principal':
+                    $principals = $this->adminModel->getPrincipalsByAdmin($adminId) ?: [];
+                    if ($search !== '') {
+                        $principals = array_values(array_filter($principals, function ($principal) use ($search) {
+                            $haystack = strtolower(($principal['contact_name'] ?? '') . ' ' . ($principal['email'] ?? ''));
+                            return strpos($haystack, strtolower($search)) !== false;
+                        }));
+                    }
+                    $total = count($principals);
+                    $pagedPrincipals = array_slice($principals, $offset, $limit);
+                    $result = [
+                        'users' => array_map([$this, 'formatPrincipalRecord'], $pagedPrincipals),
+                        'total' => $total,
+                        'page' => $page,
+                        'limit' => $limit,
+                        'type' => 'principal'
+                    ];
+                    break;
+
                 case 'all':
                     $students = $this->studentModel->getStudentsWithEnrollment($adminId, $academicYearId);
                     $teachers = $this->teacherModel->getTeachersWithSubjects($adminId, $academicYearId, false);
                     $financeUsers = $this->financeUserModel->getAllByAdmin($adminId, ['limit' => 5, 'offset' => 0]) ?: [];
+                    $principals = $this->adminModel->getPrincipalsByAdmin($adminId) ?: [];
                     $result = [
                         'students' => [
                             'users' => array_slice($students, 0, 5),
@@ -134,6 +155,10 @@ class UserManagementController
                         'finance' => [
                             'users' => $financeUsers,
                             'total' => (int)$this->financeUserModel->getCountByAdmin($adminId, [])
+                        ],
+                        'principals' => [
+                            'users' => array_slice(array_map([$this, 'formatPrincipalRecord'], $principals), 0, 5),
+                            'total' => count($principals)
                         ],
                         'type' => 'all'
                     ];
@@ -159,7 +184,7 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
             $body = $request->getParsedBody() ?? [];
             $userType = $body['user_type'] ?? null;
 
@@ -272,6 +297,42 @@ class UserManagementController
                     $result = $this->financeUserModel->createFinanceUser($financeData);
                     break;
 
+                case 'principal':
+                    if (!$this->isSuperAdmin($request, $user)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can create principal accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+
+                    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Valid email is required for principal accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    if ($this->adminModel->findByEmail($email)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $ownerAdmin = $this->adminModel->findById($adminId);
+                    if (!$ownerAdmin) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Admin account not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+
+                    $principalData = Validator::sanitize([
+                        'name' => $name,
+                        'contact_name' => $name,
+                        'email' => $email,
+                        'password' => $password,
+                        'phone' => $body['phone'] ?? null,
+                        'signature' => $body['signature'] ?? null
+                    ]);
+
+                    $newId = $this->adminModel->createPrincipal($principalData, $ownerAdmin);
+                    $principal = $this->adminModel->findPrincipalById($newId, $adminId);
+                    $result = $principal ? $this->formatPrincipalRecord($principal) : ['id' => $newId];
+                    break;
+
                 default:
                     $response->getBody()->write(json_encode(['success' => false, 'message' => 'Invalid user type']));
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -301,7 +362,7 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
             $id = $args['id'] ?? null;
             $body = $request->getParsedBody() ?? [];
             $userType = $body['user_type'] ?? null;
@@ -338,6 +399,41 @@ class UserManagementController
                     $result = $this->financeUserModel->updateFinanceUser($id, $adminId, $body);
                     break;
 
+                case 'principal':
+                    if (!$this->isSuperAdmin($request, $user)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can update principal accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+                    $existingPrincipal = $this->adminModel->findPrincipalById($id, $adminId);
+                    if (!$existingPrincipal) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Principal not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+
+                    if (!empty($body['email']) && $body['email'] !== $existingPrincipal['email']) {
+                        if (!filter_var($body['email'], FILTER_VALIDATE_EMAIL)) {
+                            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Valid email is required']));
+                            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                        }
+                        if ($this->adminModel->findByEmail($body['email'])) {
+                            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                        }
+                    }
+
+                    $principalUpdate = [
+                        'contact_name' => $body['name'] ?? $body['contact_name'] ?? null,
+                        'email' => $body['email'] ?? null,
+                        'phone' => $body['phone'] ?? null,
+                        'signature' => $body['signature'] ?? null
+                    ];
+                    if (!empty($body['password'])) {
+                        $principalUpdate['password'] = $body['password'];
+                    }
+
+                    $result = $this->adminModel->updatePrincipal($id, $adminId, $principalUpdate);
+                    break;
+
                 default:
                     $response->getBody()->write(json_encode(['success' => false, 'message' => 'Invalid user type']));
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -363,7 +459,7 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
             $id = $args['id'] ?? null;
             $query = $request->getQueryParams();
             $body = $request->getParsedBody() ?? [];
@@ -392,6 +488,19 @@ class UserManagementController
 
                 case 'finance':
                     $result = $this->financeUserModel->deleteFinanceUser($id, $adminId);
+                    break;
+
+                case 'principal':
+                    if (!$this->isSuperAdmin($request, $user)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can delete principal accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+                    $principal = $this->adminModel->findPrincipalById($id, $adminId);
+                    if (!$principal) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Principal not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+                    $result = $this->adminModel->deletePrincipal($id, $adminId);
                     break;
 
                 default:
@@ -466,14 +575,17 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
 
             $stats = [
                 'total_students' => $this->studentModel->count(['admin_id' => $adminId]),
                 'total_teachers' => $this->teacherModel->count(['admin_id' => $adminId]),
                 'total_finance_users' => $this->financeUserModel->getCountByAdmin($adminId, []),
                 'active_teachers' => $this->teacherModel->count(['admin_id' => $adminId, 'is_deleted' => 0]),
-                'exam_officers' => count($this->examOfficerModel->findByAdmin($adminId))
+                'exam_officers' => count($this->examOfficerModel->findByAdmin($adminId)),
+                'total_principals' => $this->adminModel->hasPrincipalSupport()
+                    ? $this->adminModel->count(['parent_admin_id' => $adminId, 'role' => 'principal'])
+                    : 0
             ];
 
             $response->getBody()->write(json_encode(['success' => true, 'stats' => $stats, 'message' => 'User statistics fetched successfully']));
@@ -491,7 +603,7 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
             $body = $request->getParsedBody() ?? [];
             $operation = $body['operation'] ?? null;
             $userType = $body['user_type'] ?? null;
@@ -507,6 +619,14 @@ class UserManagementController
 
             $successCount = 0;
             $failCount = 0;
+
+            if ($userType === 'principal' && !$this->isSuperAdmin($request, $user)) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Only super admins can perform this operation on principals'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+            }
 
             foreach ($userIds as $userId) {
                 try {
@@ -550,6 +670,35 @@ class UserManagementController
 
     // Helper methods
 
+    private function resolveAdminId(Request $request, $user)
+    {
+        return $request->getAttribute('admin_id') ?? ($user->admin_id ?? $user->id);
+    }
+
+    private function resolveRole(Request $request, $user)
+    {
+        return $request->getAttribute('role') ?? ($user->role ?? 'Admin');
+    }
+
+    private function isSuperAdmin(Request $request, $user): bool
+    {
+        return strcasecmp($this->resolveRole($request, $user), 'Admin') === 0;
+    }
+
+    private function formatPrincipalRecord(array $record): array
+    {
+        return [
+            'id' => $record['id'],
+            'name' => $record['contact_name'] ?? $record['email'],
+            'email' => $record['email'],
+            'phone' => $record['phone'] ?? null,
+            'role' => 'Principal',
+            'signature' => $record['signature'] ?? null,
+            'created_at' => $record['created_at'] ?? null,
+            'updated_at' => $record['updated_at'] ?? null
+        ];
+    }
+
     private function createExamOfficerRecord($email, $adminId)
     {
         try {
@@ -589,6 +738,8 @@ class UserManagementController
                 return $this->teacherModel->softDelete($userId);
             case 'finance':
                 return $this->financeUserModel->deleteFinanceUser($userId, $adminId);
+            case 'principal':
+                return $this->adminModel->deletePrincipal($userId, $adminId);
             default:
                 return false;
         }

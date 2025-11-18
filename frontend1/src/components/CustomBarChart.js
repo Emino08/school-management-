@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
 
-const CustomTooltipContent = ({ active, payload, dataKey }) => {
+const CustomTooltipContent = React.memo(({ active, payload, dataKey }) => {
     if (active && payload && payload.length) {
         const { subject, attendancePercentage, totalClasses, attendedClasses, marksObtained, subName } = payload[0].payload;
 
@@ -24,11 +24,24 @@ const CustomTooltipContent = ({ active, payload, dataKey }) => {
     }
 
     return null;
-};
+});
 
-const CustomBarChart = ({ chartData, dataKey }) => {
-    const subjects = chartData.map((data) => data.subject);
-    const distinctColors = generateDistinctColors(subjects.length);
+CustomTooltipContent.displayName = 'CustomTooltipContent';
+
+const CustomBarChart = React.memo(({ chartData, dataKey }) => {
+    const distinctColors = useMemo(() => {
+        const count = chartData.length;
+        const colors = [];
+        const goldenRatioConjugate = 0.618033988749895;
+
+        for (let i = 0; i < count; i++) {
+            const hue = (i * goldenRatioConjugate) % 1;
+            const color = hslToRgb(hue, 0.6, 0.6);
+            colors.push(`rgb(${color[0]}, ${color[1]}, ${color[2]})`);
+        }
+
+        return colors;
+    }, [chartData.length]);
 
     return (
         <BarChart width={500} height={500} data={chartData}>
@@ -42,21 +55,9 @@ const CustomBarChart = ({ chartData, dataKey }) => {
             </Bar>
         </BarChart>
     );
-};
+});
 
-// Helper function to generate distinct colors
-const generateDistinctColors = (count) => {
-    const colors = [];
-    const goldenRatioConjugate = 0.618033988749895;
-
-    for (let i = 0; i < count; i++) {
-        const hue = (i * goldenRatioConjugate) % 1;
-        const color = hslToRgb(hue, 0.6, 0.6);
-        colors.push(`rgb(${color[0]}, ${color[1]}, ${color[2]})`);
-    }
-
-    return colors;
-};
+CustomBarChart.displayName = 'CustomBarChart';
 
 // Helper function to convert HSL to RGB
 const hslToRgb = (h, s, l) => {

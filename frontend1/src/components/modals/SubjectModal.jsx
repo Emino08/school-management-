@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import axios from '../../redux/axiosConfig';
 import { useSelector, useDispatch } from 'react-redux';
 import { getAllSclasses } from '../../redux/sclassRelated/sclassHandle';
 
-const SubjectModal = ({ open, onOpenChange, onSuccess, editMode = false, subjectData = null }) => {
+const SubjectModal = ({ open, onOpenChange, onSuccess, editMode = false, subjectData = null, defaultClassId = '' }) => {
   const dispatch = useDispatch();
   const { currentUser } = useSelector((state) => state.user);
   const adminID = currentUser?._id || currentUser?.id;
@@ -61,9 +61,17 @@ const SubjectModal = ({ open, onOpenChange, onSuccess, editMode = false, subject
                 description: subjectData.description || '',
               },
         ]);
+      } else if (defaultClassId) {
+        setSubjects((prev) =>
+          prev.map((subject) =>
+            subject.sclassName
+              ? subject
+              : { ...subject, sclassName: defaultClassId.toString() }
+          )
+        );
       }
     }
-  }, [open, adminID, editMode, subjectData]);
+  }, [open, adminID, editMode, subjectData, defaultClassId]);
 
   const fetchClasses = async () => {
     setLoadingClasses(true);

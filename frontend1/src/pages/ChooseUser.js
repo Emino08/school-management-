@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { UserCog, GraduationCap, Users, Loader2 } from 'lucide-react';
+import { UserCog, GraduationCap, Users, Loader2, Heart, UsersRound, Shield } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { loginUser } from '../redux/userRelated/userHandle';
 import { toast } from 'sonner';
+import BoSchoolLogo from '@/assets/Bo-School-logo.png';
 
 const ChooseUser = ({ visitor }) => {
   const dispatch = useDispatch()
@@ -53,6 +54,22 @@ const ChooseUser = ({ visitor }) => {
         navigate('/Teacherlogin');
       }
     }
+
+    else if (user === "Principal") {
+      if (visitor === "guest") {
+        navigate('/Adminlogin?account=principal');
+      } else {
+        navigate('/Adminlogin?account=principal');
+      }
+    }
+
+    else if (user === "Parent") {
+      navigate('/parent/login');
+    }
+
+    else if (user === "Medical") {
+      navigate('/medical/login');
+    }
   }
 
   useEffect(() => {
@@ -88,6 +105,15 @@ const ChooseUser = ({ visitor }) => {
       iconColor: 'text-blue-600 dark:text-blue-400'
     },
     {
+      type: 'Principal',
+      icon: Shield,
+      title: 'Principal',
+      description: 'Oversee academics, approvals, and reports through the admin portal.',
+      color: 'from-purple-500 to-indigo-500',
+      iconBg: 'bg-purple-100 dark:bg-purple-950',
+      iconColor: 'text-purple-600 dark:text-purple-400'
+    },
+    {
       type: 'Student',
       icon: GraduationCap,
       title: 'Student',
@@ -104,6 +130,24 @@ const ChooseUser = ({ visitor }) => {
       color: 'from-purple-500 to-pink-600',
       iconBg: 'bg-purple-100 dark:bg-purple-950',
       iconColor: 'text-purple-600 dark:text-purple-400'
+    },
+    {
+      type: 'Parent',
+      icon: UsersRound,
+      title: 'Parent',
+      description: 'Monitor your children\'s progress, attendance, and communicate with teachers.',
+      color: 'from-indigo-500 to-blue-600',
+      iconBg: 'bg-indigo-100 dark:bg-indigo-950',
+      iconColor: 'text-indigo-600 dark:text-indigo-400'
+    },
+    {
+      type: 'Medical',
+      icon: Heart,
+      title: 'Medical Staff',
+      description: 'Manage student health records, treatments, and medical documentation.',
+      color: 'from-teal-500 to-cyan-600',
+      iconBg: 'bg-teal-100 dark:bg-teal-950',
+      iconColor: 'text-teal-600 dark:text-teal-400'
     }
   ];
 
@@ -112,6 +156,13 @@ const ChooseUser = ({ visitor }) => {
       <div className="w-full max-w-6xl">
         {/* Header Section */}
         <div className="text-center mb-12 space-y-4">
+          <div className="flex justify-center">
+            <img
+              src={BoSchoolLogo}
+              alt="Bo School crest"
+              className="h-20 w-auto drop-shadow-[0_15px_30px_rgba(0,0,0,0.35)]"
+            />
+          </div>
           <Badge variant="outline" className="mb-4 bg-white/10 text-white border-white/20 backdrop-blur-sm">
             School Management System
           </Badge>
@@ -124,7 +175,7 @@ const ChooseUser = ({ visitor }) => {
         </div>
 
         {/* Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {userTypes.map((user) => {
             const Icon = user.icon;
             return (

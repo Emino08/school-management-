@@ -481,15 +481,20 @@ const ClassManagement = () => {
           </div>
         ) : (
           filteredClasses.map((cls) => (
-            <Card key={cls.id} className="hover:shadow-lg transition-shadow h-full flex flex-col overflow-hidden min-w-0 min-h-[380px] sm:min-h-[380px] md:min-h-[400px]">
+            <Card
+              key={cls.id}
+              className="hover:shadow-lg transition-shadow flex flex-col overflow-hidden min-w-0 h-full"
+            >
               <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
                       <BookOpen className="w-6 h-6 text-blue-600" />
                     </div>
-                    <div>
-                      <CardTitle className="text-lg">{cls.class_name}</CardTitle>
+                    <div className="min-w-0">
+                      <CardTitle className="text-lg font-semibold text-gray-900 leading-tight break-words">
+                        {cls.class_name}
+                      </CardTitle>
                       <p className="text-sm text-gray-500 mt-1">
                         Class {cls.id}
                       </p>
@@ -499,39 +504,34 @@ const ClassManagement = () => {
               </CardHeader>
               <CardContent className="space-y-4 flex flex-col h-full min-w-0">
                 {/* Stats */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                     <div className="flex items-center gap-2 text-gray-600 text-sm mb-1">
                       <GraduationCap className="w-4 h-4" />
                       Students
                     </div>
-                    <div className="text-2xl font-bold text-gray-900">
+                    <div className="text-3xl font-semibold text-gray-900 leading-none">
                       {cls.student_count || 0}
                     </div>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                     <div className="flex items-center gap-2 text-gray-600 text-sm mb-1">
                       <BookOpen className="w-4 h-4" />
                       Subjects
                     </div>
-                    <div className="text-2xl font-bold text-gray-900">
+                    <div className="text-3xl font-semibold text-gray-900 leading-none">
                       {cls.subject_count || 0}
                     </div>
                   </div>
                 </div>
 
                 {/* Class Master */}
-                <div className="border-t pt-4 min-w-0">
-                  <div className="text-sm text-gray-600 mb-2">Class Master</div>
+                <div className="border border-dashed border-gray-200 rounded-xl p-4 min-w-0 bg-white">
+                  <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Class Master</div>
                   {cls.class_master_name ? (
-                    <div
-                      className="relative z-0 flex items-center gap-2 rounded-full bg-green-50 px-3 py-1 text-green-700 border border-green-200 w-full min-w-0"
-                    >
+                    <div className="relative z-0 flex items-start gap-2 rounded-2xl bg-green-50 px-3 py-2 text-green-700 border border-green-200 w-full min-w-0">
                       <UserCheck className="w-4 h-4 flex-shrink-0" />
-                      <span
-                        className="font-medium overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0"
-                        title={cls.class_master_name}
-                      >
+                      <span className="font-medium text-sm leading-snug break-words flex-1 min-w-0" title={cls.class_master_name}>
                         {cls.class_master_name}
                       </span>
                     </div>
@@ -541,13 +541,13 @@ const ClassManagement = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="pt-4 border-t relative z-10 mt-auto min-w-0">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 min-w-0">
+                <div className="pt-2 mt-auto min-w-0">
+                  <div className="flex flex-wrap gap-2 min-w-0">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="w-full"
-                      onClick={() => navigate(`/Admin/classes/view/${cls.id}`)}
+                      className="flex-1 min-w-[130px]"
+                      onClick={() => navigate(`/Admin/classes/class/${cls.id}`)}
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       View
@@ -556,7 +556,7 @@ const ClassManagement = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="w-full"
+                      className="flex-1 min-w-[130px]"
                       onClick={() => openAssignModal(cls)}
                       title={cls.class_master_name ? 'Change Class Master' : 'Assign Class Master'}
                     >
@@ -568,7 +568,7 @@ const ClassManagement = () => {
                       <Button
                         variant="destructive"
                         size="sm"
-                        className="w-full"
+                        className="flex-1 min-w-[130px]"
                         onClick={() => {
                           setConfirmAction({
                             title: 'Remove Class Master',
@@ -583,29 +583,29 @@ const ClassManagement = () => {
                       </Button>
                     )}
 
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => handleEditClass(cls)}
-                        title="Edit Class"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          setClassToDelete(cls);
-                          setShowDeleteDialog(true);
-                        }}
-                        title="Delete Class"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 min-w-[100px]"
+                      onClick={() => handleEditClass(cls)}
+                      title="Edit Class"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="flex-1 min-w-[100px]"
+                      onClick={() => {
+                        setClassToDelete(cls);
+                        setShowDeleteDialog(true);
+                      }}
+                      title="Delete Class"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </Button>
                   </div>
                 </div>
               </CardContent>

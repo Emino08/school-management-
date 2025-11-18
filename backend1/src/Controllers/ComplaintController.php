@@ -75,7 +75,7 @@ class ComplaintController
             $category = $params['category'] ?? null;
             $priority = $params['priority'] ?? null;
 
-            $adminId = $user->role === 'Admin' ? $user->id : $user->admin_id;
+            $adminId = $this->resolveAdminId($request, $user);
             $complaints = $this->complaintModel->getComplaintsWithDetails($adminId, $status, $category, $priority);
 
             $response->getBody()->write(json_encode(['success' => true, 'complaints' => $complaints]));
@@ -107,7 +107,7 @@ class ComplaintController
         $user = $request->getAttribute('user');
 
         try {
-            $adminId = $user->role === 'Admin' ? $user->id : $user->admin_id;
+            $adminId = $this->resolveAdminId($request, $user);
             $stats = $this->complaintModel->getComplaintStats($adminId);
 
             $response->getBody()->write(json_encode(['success' => true, 'stats' => $stats]));
@@ -131,7 +131,7 @@ class ComplaintController
             }
 
             // Check authorization
-            $adminId = $user->role === 'Admin' ? $user->id : $user->admin_id;
+            $adminId = $this->resolveAdminId($request, $user);
             if ($complaint['admin_id'] != $adminId && $complaint['user_id'] != $user->id) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'Unauthorized access']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
@@ -165,7 +165,7 @@ class ComplaintController
             }
 
             // Only admin can update complaint status
-            $adminId = $user->role === 'Admin' ? $user->id : $user->admin_id;
+            $adminId = $this->resolveAdminId($request, $user);
             if ($complaint['admin_id'] != $adminId) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'Unauthorized access']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
@@ -193,7 +193,7 @@ class ComplaintController
             }
 
             // Only admin can delete complaints
-            $adminId = $user->role === 'Admin' ? $user->id : $user->admin_id;
+            $adminId = $this->resolveAdminId($request, $user);
             if ($complaint['admin_id'] != $adminId) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'Unauthorized access']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
@@ -206,5 +206,10 @@ class ComplaintController
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Deletion failed: ' . $e->getMessage()]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
+    }
+
+    private function resolveAdminId(Request $request, $user)
+    {
+        return $request->getAttribute('admin_id') ?? ($user->admin_id ?? $user->id);
     }
 }

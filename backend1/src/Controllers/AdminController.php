@@ -62,26 +62,35 @@ class AdminController
         }
 
         try {
-            $adminId = $this->adminModel->createAdmin(Validator::sanitize($data));
+            $sanitized = Validator::sanitize($data);
+            $adminId = $this->adminModel->createAdmin($sanitized, 'admin');
 
-            // Get the created admin
-            $admin = $this->adminModel->findById($adminId);
-            unset($admin['password']);
+            // Get the created admin/account
+            $adminAccount = $this->sanitizeAdminRecord($this->adminModel->findById($adminId));
 
             // Generate JWT token
             $token = JWT::encode([
-                'id' => $admin['id'],
+                'id' => $adminAccount['id'],
                 'role' => 'Admin',
-                'email' => $admin['email']
-            ]);
+                'email' => $adminAccount['email'],
+                'admin_id' => $adminAccount['id'],
+                'account_id' => $adminAccount['id']
+            ], $_ENV['JWT_SECRET'], 'HS256');
 
             $response->getBody()->write(json_encode([
                 'success' => true,
                 'message' => 'Admin registered successfully',
                 'role' => 'Admin',
-                'schoolName' => $admin['school_name'],
+                'schoolName' => $adminAccount['school_name'],
                 'token' => $token,
-                'admin' => $admin
+                'admin' => $adminAccount,
+                'account' => [
+                    'id' => $adminAccount['id'],
+                    'email' => $adminAccount['email'],
+                    'contact_name' => $adminAccount['contact_name'] ?? null,
+                    'role' => 'Admin'
+                ],
+                'permissions' => $this->formatPermissions('Admin')
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
         } catch (\Exception $e) {
@@ -111,9 +120,9 @@ class AdminController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
         }
 
-        $admin = $this->adminModel->findByEmail($data['email']);
+        $account = $this->adminModel->findByEmail($data['email']);
 
-        if (!$admin || !$this->adminModel->verifyPassword($data['password'], $admin['password'])) {
+        if (!$account || !$this->adminModel->verifyPassword($data['password'], $account['password'])) {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Invalid credentials'
@@ -121,20 +130,55 @@ class AdminController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
         }
 
-        $token = JWT::encode([
-            'id' => $admin['id'],
-            'role' => 'Admin',
-            'email' => $admin['email']
-        ]);
+        $isPrincipal = isset($account['role']) && strtolower($account['role']) === 'principal';
+        if ($isPrincipal && empty($account['parent_admin_id'])) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Principal account is not linked to any administrator'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+        }
 
-        unset($admin['password']);
+        $ownerAdmin = $isPrincipal
+            ? $this->adminModel->findById($account['parent_admin_id'])
+            : $account;
+
+        if (!$ownerAdmin) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Parent administrator account not found'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        }
+
+        $roleLabel = $isPrincipal ? 'Principal' : 'Admin';
+        $ownerAdmin = $this->sanitizeAdminRecord($ownerAdmin);
+        $accountRecord = $this->sanitizeAdminRecord($account);
+
+        $token = JWT::encode([
+            'id' => $ownerAdmin['id'],
+            'role' => $roleLabel,
+            'email' => $accountRecord['email'],
+            'admin_id' => $ownerAdmin['id'],
+            'account_id' => $accountRecord['id']
+        ], $_ENV['JWT_SECRET'], 'HS256');
 
         $response->getBody()->write(json_encode([
             'success' => true,
             'message' => 'Login successful',
-            'role' => 'Admin',
+            'role' => $roleLabel,
+            'schoolName' => $ownerAdmin['school_name'],
             'token' => $token,
-            'admin' => $admin
+            'admin' => $ownerAdmin,
+            'account' => [
+                'id' => $accountRecord['id'],
+                'email' => $accountRecord['email'],
+                'contact_name' => $accountRecord['contact_name'] ?? null,
+                'role' => $roleLabel,
+                'phone' => $accountRecord['phone'] ?? null,
+                'signature' => $accountRecord['signature'] ?? null
+            ],
+            'permissions' => $this->formatPermissions($roleLabel)
         ]));
         return $response->withHeader('Content-Type', 'application/json');
     }
@@ -142,7 +186,11 @@ class AdminController
     public function getProfile(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
-        $admin = $this->adminModel->findById($user->id);
+        $adminId = $this->getScopedAdminId($request, $user);
+        $accountId = $this->getAccountId($request, $user);
+
+        $admin = $this->sanitizeAdminRecord($this->adminModel->findById($adminId));
+        $account = $this->sanitizeAdminRecord($this->adminModel->findById($accountId));
 
         if (!$admin) {
             $response->getBody()->write(json_encode([
@@ -152,11 +200,15 @@ class AdminController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
         }
 
-        unset($admin['password']);
+        if (!$account) {
+            $account = $admin;
+        }
 
         $response->getBody()->write(json_encode([
             'success' => true,
-            'admin' => $admin
+            'admin' => $admin,
+            'account' => $account,
+            'permissions' => $this->formatPermissions($this->getRequestRole($request, $user))
         ]));
         return $response->withHeader('Content-Type', 'application/json');
     }
@@ -164,6 +216,7 @@ class AdminController
     public function updateProfile(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getScopedAdminId($request, $user);
         $data = Validator::sanitize($request->getParsedBody());
 
         // Remove password from update if not provided
@@ -177,7 +230,7 @@ class AdminController
         unset($data['email'], $data['id']);
 
         try {
-            $this->adminModel->update($user->id, $data);
+            $this->adminModel->update($adminId, $data);
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -196,10 +249,19 @@ class AdminController
     public function getDashboardStats(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $user->admin_id ?? $user->id;
+        
+        $queryParams = $request->getQueryParams();
+        $forceRefresh = isset($queryParams['refresh']) && $queryParams['refresh'] === 'true';
 
         try {
             $cache = new Cache();
-            $cacheKey = 'dashboard_stats_' . $user->id;
+            $cacheKey = 'dashboard_stats_' . $adminId;
+
+            // Force refresh if requested
+            if ($forceRefresh) {
+                $cache->forget($cacheKey);
+            }
 
             // Cache dashboard stats for 5 minutes (300 seconds)
             $stats = $cache->remember($cacheKey, 300, function() use ($user) {
@@ -224,21 +286,69 @@ class AdminController
     private function calculateDashboardStats($user)
     {
         try {
+            // For Admin role, user->id is the admin_id
+            $adminId = isset($user->admin_id) ? $user->admin_id : $user->id;
+            
             $db = \App\Config\Database::getInstance()->getConnection();
+            
+            // Get current academic year first
+            $yearStmt = $db->prepare("SELECT id FROM academic_years WHERE admin_id = :admin AND is_current = 1 LIMIT 1");
+            $yearStmt->execute([':admin' => $adminId]);
+            $year = $yearStmt->fetch(\PDO::FETCH_ASSOC);
+            $yearId = $year['id'] ?? null;
+            
+            // Count students enrolled in current academic year
+            $studentsCount = 0;
+            if ($yearId) {
+                $stmt = $db->prepare("SELECT COUNT(DISTINCT se.student_id) as count 
+                                      FROM student_enrollments se 
+                                      INNER JOIN students s ON se.student_id = s.id
+                                      WHERE s.admin_id = :admin AND se.academic_year_id = :year");
+                $stmt->execute([':admin' => $adminId, ':year' => $yearId]);
+                $studentsCount = (int)($stmt->fetch(\PDO::FETCH_ASSOC)['count'] ?? 0);
+            }
+            
+            // Count classes for current academic year (only classes with enrollments)
+            $classesCount = 0;
+            if ($yearId) {
+                $stmt = $db->prepare("SELECT COUNT(DISTINCT se.class_id) as count 
+                                      FROM student_enrollments se 
+                                      INNER JOIN classes c ON se.class_id = c.id
+                                      WHERE c.admin_id = :admin AND se.academic_year_id = :year");
+                $stmt->execute([':admin' => $adminId, ':year' => $yearId]);
+                $classesCount = (int)($stmt->fetch(\PDO::FETCH_ASSOC)['count'] ?? 0);
+            }
+            
+            // If no classes with enrollments, fallback to all classes
+            if ($classesCount === 0 && $yearId) {
+                $classesCount = $this->classModel->count(['admin_id' => $adminId]);
+            }
+            
+            // Count teachers assigned in current academic year
+            $teachersCount = 0;
+            if ($yearId) {
+                $stmt = $db->prepare("SELECT COUNT(DISTINCT ta.teacher_id) as count 
+                                      FROM teacher_assignments ta 
+                                      INNER JOIN teachers t ON ta.teacher_id = t.id
+                                      WHERE t.admin_id = :admin AND ta.academic_year_id = :year");
+                $stmt->execute([':admin' => $adminId, ':year' => $yearId]);
+                $teachersCount = (int)($stmt->fetch(\PDO::FETCH_ASSOC)['count'] ?? 0);
+            }
+            
+            // If no teachers in assignments or table doesn't exist, count all teachers
+            if ($teachersCount === 0) {
+                $teachersCount = $this->teacherModel->count(['admin_id' => $adminId]);
+            }
+            
             $stats = [
-                'total_students' => $this->studentModel->count(['admin_id' => $user->id]),
-                'total_teachers' => $this->teacherModel->count(['admin_id' => $user->id]),
-                'total_classes' => $this->classModel->count(['admin_id' => $user->id])
+                'total_students' => $studentsCount,
+                'total_teachers' => $teachersCount,
+                'total_classes' => $classesCount,
+                'current_academic_year_id' => $yearId
             ];
 
             // Attendance analytics for today
-            $db = \App\Config\Database::getInstance()->getConnection();
             $today = date('Y-m-d');
-            // Get current academic year
-            $yearStmt = $db->prepare("SELECT id FROM academic_years WHERE admin_id = :admin AND is_current = 1 LIMIT 1");
-            $yearStmt->execute([':admin' => $user->id]);
-            $year = $yearStmt->fetch(\PDO::FETCH_ASSOC);
-            $yearId = $year['id'] ?? null;
 
             $present = $absent = $late = $excused = $total = $distinctStudents = 0;
             if ($yearId) {
@@ -247,7 +357,7 @@ class AdminController
                       WHERE s.admin_id = :admin AND a.academic_year_id = :year AND a.date = :today
                       GROUP BY status";
                 $stmt = $db->prepare($q);
-                $stmt->execute([':admin' => $user->id, ':year' => $yearId, ':today' => $today]);
+                $stmt->execute([':admin' => $adminId, ':year' => $yearId, ':today' => $today]);
                 $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
                 foreach ($rows as $r) {
                     $total += (int)$r['cnt'];
@@ -259,7 +369,7 @@ class AdminController
                     }
                 }
                 $ds = $db->prepare("SELECT COUNT(DISTINCT a.student_id) as ds FROM attendance a INNER JOIN students s ON a.student_id = s.id WHERE s.admin_id = :admin AND a.academic_year_id = :year AND a.date = :today");
-                $ds->execute([':admin' => $user->id, ':year' => $yearId, ':today' => $today]);
+                $ds->execute([':admin' => $adminId, ':year' => $yearId, ':today' => $today]);
                 $distinctStudents = (int)($ds->fetch(\PDO::FETCH_ASSOC)['ds'] ?? 0);
             }
 
@@ -274,10 +384,24 @@ class AdminController
                 'attendance_rate' => $total > 0 ? round(($present / $total) * 100, 2) : 0,
             ];
 
-            // Add actual subjects count for admin
-            $subStmt = $db->prepare("SELECT COUNT(*) AS c FROM subjects WHERE admin_id = :admin");
-            $subStmt->execute([':admin' => $user->id]);
-            $stats['total_subjects'] = (int)($subStmt->fetch(\PDO::FETCH_ASSOC)['c'] ?? 0);
+            // Add subjects count for current academic year (subjects being taught)
+            $subjectsCount = 0;
+            if ($yearId) {
+                $subStmt = $db->prepare("SELECT COUNT(DISTINCT ta.subject_id) AS c 
+                                         FROM teacher_assignments ta 
+                                         WHERE ta.academic_year_id = :year");
+                $subStmt->execute([':year' => $yearId]);
+                $subjectsCount = (int)($subStmt->fetch(\PDO::FETCH_ASSOC)['c'] ?? 0);
+            }
+            
+            // Fallback to all subjects if no assignments
+            if ($subjectsCount === 0) {
+                $subStmt = $db->prepare("SELECT COUNT(*) AS c FROM subjects WHERE admin_id = :admin");
+                $subStmt->execute([':admin' => $adminId]);
+                $subjectsCount = (int)($subStmt->fetch(\PDO::FETCH_ASSOC)['c'] ?? 0);
+            }
+            
+            $stats['total_subjects'] = $subjectsCount;
 
             // Enhanced Fees stats (current year)
             if ($yearId) {
@@ -288,7 +412,7 @@ class AdminController
                         FROM fees_payments fp
                         INNER JOIN students s ON fp.student_id = s.id
                         WHERE s.admin_id = :admin AND fp.academic_year_id = :year");
-                $feesStmt->execute([':admin' => $user->id, ':year' => $yearId]);
+                $feesStmt->execute([':admin' => $adminId, ':year' => $yearId]);
                 $fees = $feesStmt->fetch(\PDO::FETCH_ASSOC) ?: ['total_collected'=>0,'students_paid'=>0];
 
                 // Get expected amount from fee structures if table exists
@@ -318,7 +442,7 @@ class AdminController
                                           WHERE s.admin_id = :admin
                                             AND fp.academic_year_id = :year
                                             AND fp.payment_date BETWEEN :start AND :end");
-                $monthStmt->execute([':admin' => $user->id, ':year' => $yearId, ':start' => $monthStart, ':end' => $monthEnd]);
+                $monthStmt->execute([':admin' => $adminId, ':year' => $yearId, ':start' => $monthStart, ':end' => $monthEnd]);
                 $monthData = $monthStmt->fetch(\PDO::FETCH_ASSOC);
 
                 $stats['fees'] = [
@@ -350,7 +474,7 @@ class AdminController
                                 SUM(CASE WHEN is_published = 0 THEN 1 ELSE 0 END) as pending
                             FROM exams e
                             WHERE e.admin_id = :admin AND e.academic_year_id = :year");
-                    $resultsStmt->execute([':admin' => $user->id, ':year' => $yearId]);
+                    $resultsStmt->execute([':admin' => $adminId, ':year' => $yearId]);
                     $results = $resultsStmt->fetch(\PDO::FETCH_ASSOC);
                     $stats['results'] = [
                         'total' => (int)($results['total'] ?? 0),
@@ -369,7 +493,7 @@ class AdminController
                             SUM(CASE WHEN date >= CURDATE() THEN 1 ELSE 0 END) as active,
                             SUM(CASE WHEN DATEDIFF(CURDATE(), created_at) <= 7 THEN 1 ELSE 0 END) as recent
                         FROM notices WHERE admin_id = :admin");
-                $noticesStmt->execute([':admin' => $user->id]);
+                $noticesStmt->execute([':admin' => $adminId]);
                 $notices = $noticesStmt->fetch(\PDO::FETCH_ASSOC);
                 $stats['notices'] = [
                     'total' => (int)($notices['total'] ?? 0),
@@ -388,7 +512,7 @@ class AdminController
                             SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
                             SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved
                         FROM complaints WHERE admin_id = :admin");
-                $complaintsStmt->execute([':admin' => $user->id]);
+                $complaintsStmt->execute([':admin' => $adminId]);
                 $complaints = $complaintsStmt->fetch(\PDO::FETCH_ASSOC);
                 $stats['complaints'] = [
                     'total' => (int)($complaints['total'] ?? 0),
@@ -420,10 +544,20 @@ class AdminController
     public function deleteAdmin(Request $request, Response $response, $args)
     {
         $user = $request->getAttribute('user');
-        $adminId = $args['id'];
+        $targetId = (int)$args['id'];
+        $ownAdminId = $this->getScopedAdminId($request, $user);
+        $role = $this->getRequestRole($request, $user);
+
+        if (strtolower($role) !== 'admin') {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Only super admins can delete administrator accounts'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+        }
 
         // Prevent self-deletion
-        if ($user->id == $adminId) {
+        if ($targetId === $ownAdminId) {
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Cannot delete your own account'
@@ -432,7 +566,7 @@ class AdminController
         }
 
         try {
-            $this->adminModel->delete($adminId);
+            $this->adminModel->delete($targetId);
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -452,6 +586,8 @@ class AdminController
     public function getDashboardCharts(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $user->admin_id ?? $user->id;
+        
         $params = $request->getQueryParams();
         $days = isset($params['days']) ? (int)$params['days'] : 30;
         if ($days <= 0 || $days > 180) { $days = 30; }
@@ -461,19 +597,13 @@ class AdminController
         $attDate = $params['date'] ?? null; // For attendance_by_class
 
         try {
-            $cache = new Cache();
-            // Create cache key based on user and filter parameters
-            $cacheKey = 'dashboard_charts_' . $user->id . '_' . md5(json_encode($params));
-
-            // Cache dashboard charts for 10 minutes (600 seconds)
-            $charts = $cache->remember($cacheKey, 600, function() use ($user, $days, $start, $end, $term, $attDate) {
-                return $this->calculateDashboardCharts($user, $days, $start, $end, $term, $attDate);
-            });
+            // Temporarily bypass cache to debug
+            $charts = $this->calculateDashboardCharts($user, $days, $start, $end, $term, $attDate);
 
             $response->getBody()->write(json_encode([
                 'success' => true,
                 'charts' => $charts,
-                'cached' => $cache->has($cacheKey, 600)
+                'cached' => false
             ]));
             return $response->withHeader('Content-Type', 'application/json');
         } catch (\Exception $e) {
@@ -490,9 +620,16 @@ class AdminController
         try {
             $db = \App\Config\Database::getInstance()->getConnection();
 
+            // For Admin role, use admin_id from JWT token
+            $adminId = isset($user->admin_id) ? $user->admin_id : $user->id;
+            
+            if (!$adminId) {
+                throw new \Exception("Admin ID not found in user object");
+            }
+
             // Current academic year
-            $yearStmt = $db->prepare("SELECT id FROM academic_years WHERE admin_id = :admin AND is_current = 1 LIMIT 1");
-            $yearStmt->execute([':admin' => $user->id]);
+            $yearStmt = $db->prepare("SELECT id FROM academic_years WHERE admin_id = ? AND is_current = 1 LIMIT 1");
+            $yearStmt->execute([$adminId]);
             $year = $yearStmt->fetch(\PDO::FETCH_ASSOC);
             $yearId = $year['id'] ?? null;
 
@@ -507,6 +644,9 @@ class AdminController
 
             if ($yearId) {
                 // Attendance trend over last N days
+                $startDate = $start ?: date('Y-m-d', strtotime("-{$days} days"));
+                $endDate = $end ?: date('Y-m-d');
+                
                 $trendSql = "SELECT a.date,
                                    SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) AS present,
                                    SUM(CASE WHEN a.status='absent' THEN 1 ELSE 0 END)  AS absent,
@@ -514,59 +654,48 @@ class AdminController
                                    SUM(CASE WHEN a.status='excused' THEN 1 ELSE 0 END) AS excused
                             FROM attendance a
                             INNER JOIN students s ON a.student_id = s.id
-                            WHERE s.admin_id = :admin
-                              AND a.academic_year_id = :year
-                              AND a.date BETWEEN :startDate AND :endDate
+                            WHERE s.admin_id = ? AND a.academic_year_id = ? AND a.date BETWEEN ? AND ?
                             GROUP BY a.date
                             ORDER BY a.date ASC";
                 $trendStmt = $db->prepare($trendSql);
-                $trendStmt->bindValue(':admin', $user->id, \PDO::PARAM_INT);
-                $trendStmt->bindValue(':year', $yearId, \PDO::PARAM_INT);
-                $trendStmt->bindValue(':startDate', $start ?: date('Y-m-d', strtotime("-{$days} days")));
-                $trendStmt->bindValue(':endDate', $end ?: date('Y-m-d'));
-                $trendStmt->execute();
+                $trendStmt->execute([$adminId, $yearId, $startDate, $endDate]);
                 $attendanceTrend = $trendStmt->fetchAll(\PDO::FETCH_ASSOC);
 
                 // Students per class (current year)
-                $classSql = "SELECT c.class_name, c.id,
-                                    COUNT(se.student_id) AS student_count
+                $classSql = "SELECT c.class_name, c.id, COUNT(se.student_id) AS student_count
                              FROM classes c
-                             LEFT JOIN student_enrollments se
-                               ON se.class_id = c.id AND se.academic_year_id = :year
-                             WHERE c.admin_id = :admin
+                             LEFT JOIN student_enrollments se ON se.class_id = c.id AND se.academic_year_id = ?
+                             WHERE c.admin_id = ?
                              GROUP BY c.id, c.class_name
                              ORDER BY c.class_name";
                 $classStmt = $db->prepare($classSql);
-                $classStmt->execute([':admin' => $user->id, ':year' => $yearId]);
+                $classStmt->execute([$yearId, $adminId]);
                 $classStudentCounts = $classStmt->fetchAll(\PDO::FETCH_ASSOC);
 
                 // Fees trend last N days
                 $feesSql = "SELECT fp.payment_date as date, COALESCE(SUM(fp.amount),0) as amount
                             FROM fees_payments fp
                             INNER JOIN students s ON fp.student_id = s.id
-                            WHERE s.admin_id = :admin AND fp.academic_year_id = :year
-                              AND fp.payment_date BETWEEN :startDate AND :endDate" . ($term ? " AND fp.term = :term" : "") . "
+                            WHERE s.admin_id = ? AND fp.academic_year_id = ?" . ($term ? " AND fp.term = ?" : "") . "
+                              AND fp.payment_date BETWEEN ? AND ?
                             GROUP BY fp.payment_date
                             ORDER BY fp.payment_date ASC";
                 $fs = $db->prepare($feesSql);
-                $fs->bindValue(':admin', $user->id, \PDO::PARAM_INT);
-                $fs->bindValue(':year', $yearId, \PDO::PARAM_INT);
-                $fs->bindValue(':startDate', $start ?: date('Y-m-d', strtotime("-{$days} days")));
-                $fs->bindValue(':endDate', $end ?: date('Y-m-d'));
-                if ($term) { $fs->bindValue(':term', $term); }
-                $fs->execute();
+                $params = [$adminId, $yearId];
+                if ($term) $params[] = $term;
+                $params[] = $startDate;
+                $params[] = $endDate;
+                $fs->execute($params);
                 $feesTrend = $fs->fetchAll(\PDO::FETCH_ASSOC);
 
                 // Results publication counts by date (if table exists)
                 try {
-                $rp = $db->prepare("SELECT publication_date as date, COUNT(*) as count
-                                        FROM result_publications
-                                        WHERE publication_date IS NOT NULL
-                                          AND publication_date BETWEEN :startDate AND :endDate
-                                        GROUP BY publication_date ORDER BY publication_date ASC");
-                    $rp->bindValue(':startDate', $start ?: date('Y-m-d', strtotime("-{$days} days")));
-                    $rp->bindValue(':endDate', $end ?: date('Y-m-d'));
-                    $rp->execute();
+                    $rp = $db->prepare("SELECT publication_date as date, COUNT(*) as count
+                                            FROM result_publications
+                                            WHERE publication_date IS NOT NULL
+                                              AND publication_date BETWEEN ? AND ?
+                                            GROUP BY publication_date ORDER BY publication_date ASC");
+                    $rp->execute([$startDate, $endDate]);
                     $resultsPublications = $rp->fetchAll(\PDO::FETCH_ASSOC);
                 } catch (\Exception $e) {
                     $resultsPublications = [];
@@ -575,37 +704,39 @@ class AdminController
                 // Teacher load (subjects assigned) top 10
                 $tl = $db->prepare("SELECT t.name as teacher_name, COUNT(ta.subject_id) as subjects
                                     FROM teachers t
-                                    LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.academic_year_id = :year
-                                    WHERE t.admin_id = :admin
+                                    LEFT JOIN teacher_assignments ta ON ta.teacher_id = t.id AND ta.academic_year_id = ?
+                                    WHERE t.admin_id = ?
                                     GROUP BY t.id, t.name
+                                    HAVING subjects > 0
                                     ORDER BY subjects DESC, t.name ASC
                                     LIMIT 10");
-                $tl->execute([':admin' => $user->id, ':year' => $yearId]);
+                $tl->execute([$yearId, $adminId]);
                 $teacherLoad = $tl->fetchAll(\PDO::FETCH_ASSOC);
 
                 // Fees by term (current academic year)
                 $termSql = "SELECT fp.term, COALESCE(SUM(fp.amount),0) as amount
                             FROM fees_payments fp
                             INNER JOIN students s ON fp.student_id = s.id
-                            WHERE s.admin_id = :admin AND fp.academic_year_id = :year
+                            WHERE s.admin_id = ? AND fp.academic_year_id = ?
                             GROUP BY fp.term";
                 $ts = $db->prepare($termSql);
-                $ts->execute([':admin' => $user->id, ':year' => $yearId]);
+                $ts->execute([$adminId, $yearId]);
                 $feesByTerm = $ts->fetchAll(\PDO::FETCH_ASSOC);
 
                 // Attendance by class (rate for today)
+                $attDateVal = $attDate ?: date('Y-m-d');
                 $attClassSql = "SELECT c.id as class_id, c.class_name,
                                     SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) as present,
                                     COUNT(a.id) as total
                                  FROM classes c
-                                 INNER JOIN student_enrollments se ON se.class_id = c.id AND se.academic_year_id = :year
+                                 INNER JOIN student_enrollments se ON se.class_id = c.id AND se.academic_year_id = ?
                                  LEFT JOIN attendance a
-                                   ON a.student_id = se.student_id AND a.academic_year_id = :year AND a.date = :attDate
-                                 WHERE c.admin_id = :admin
+                                   ON a.student_id = se.student_id AND a.academic_year_id = ? AND a.date = ?
+                                 WHERE c.admin_id = ?
                                  GROUP BY c.id, c.class_name
                                  ORDER BY c.class_name";
                 $ac = $db->prepare($attClassSql);
-                $ac->execute([':admin' => $user->id, ':year' => $yearId, ':attDate' => ($attDate ?: date('Y-m-d'))]);
+                $ac->execute([$yearId, $yearId, $attDateVal, $adminId]);
                 $attendanceByClass = array_map(function($r){
                     $r['rate'] = ($r['total'] ?? 0) > 0 ? round(($r['present'] / $r['total']) * 100, 2) : 0;
                     return $r;
@@ -619,17 +750,13 @@ class AdminController
                                                   ELSE er.marks_obtained END) as avg_score
                                   FROM exam_results er
                                   INNER JOIN exams e ON er.exam_id = e.id
-                                  WHERE e.academic_year_id = :year
-                                    AND e.admin_id = :admin
-                                    AND e.exam_date BETWEEN :startDate AND :endDate
+                                  WHERE e.academic_year_id = ?
+                                    AND e.admin_id = ?
+                                    AND e.exam_date BETWEEN ? AND ?
                                   GROUP BY e.exam_date
                                   ORDER BY e.exam_date ASC";
                     $gs = $db->prepare($gradesSql);
-                    $gs->bindValue(':admin', $user->id, \PDO::PARAM_INT);
-                    $gs->bindValue(':year', $yearId, \PDO::PARAM_INT);
-                    $gs->bindValue(':startDate', $start ?: date('Y-m-d', strtotime("-{$days} days")));
-                    $gs->bindValue(':endDate', $end ?: date('Y-m-d'));
-                    $gs->execute();
+                    $gs->execute([$yearId, $adminId, $startDate, $endDate]);
                     $avgGradesTrend = $gs->fetchAll(\PDO::FETCH_ASSOC);
                 } catch (\Exception $e) {
                     $avgGradesTrend = [];
@@ -647,7 +774,9 @@ class AdminController
                 'avg_grades_trend' => $avgGradesTrend
             ];
         } catch (\Exception $e) {
-            // Return empty charts on error
+            // Log error and return empty charts
+            error_log("Chart calculation error: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
             return [
                 'attendance_trend' => [],
                 'class_student_counts' => [],
@@ -659,5 +788,42 @@ class AdminController
                 'avg_grades_trend' => []
             ];
         }
+    }
+
+    private function getScopedAdminId(Request $request, $user)
+    {
+        return $request->getAttribute('admin_id') ?? ($user->admin_id ?? $user->id);
+    }
+
+    private function getAccountId(Request $request, $user)
+    {
+        return $request->getAttribute('account_id') ?? ($user->account_id ?? $this->getScopedAdminId($request, $user));
+    }
+
+    private function getRequestRole(Request $request, $user): string
+    {
+        return $request->getAttribute('role') ?? ($user->role ?? 'Admin');
+    }
+
+    private function sanitizeAdminRecord(?array $record): ?array
+    {
+        if (!$record) {
+            return null;
+        }
+
+        if (isset($record['password'])) {
+            unset($record['password']);
+        }
+
+        return $record;
+    }
+
+    private function formatPermissions(string $role): array
+    {
+        $isAdmin = strtolower($role) === 'admin';
+        return [
+            'isSuperAdmin' => $isAdmin,
+            'canManagePrincipals' => $isAdmin
+        ];
     }
 }

@@ -64,7 +64,7 @@ class NotificationController
                 SELECT n.*,
                        COALESCE(
                          CASE 
-                           WHEN n.sender_role = 'Admin' THEN (SELECT school_name FROM admins WHERE id = n.sender_id)
+                           WHEN n.sender_role IN ('Admin','Principal') THEN (SELECT school_name FROM admins WHERE id = n.sender_id)
                            WHEN n.sender_role = 'Teacher' THEN (SELECT name FROM teachers WHERE id = n.sender_id)
                            ELSE NULL
                          END,
@@ -126,7 +126,7 @@ class NotificationController
                 SELECT n.*,
                        COALESCE(
                          CASE 
-                           WHEN n.sender_role = 'Admin' THEN (SELECT school_name FROM admins WHERE id = n.sender_id)
+                           WHEN n.sender_role IN ('Admin','Principal') THEN (SELECT school_name FROM admins WHERE id = n.sender_id)
                            WHEN n.sender_role = 'Teacher' THEN (SELECT name FROM teachers WHERE id = n.sender_id)
                            ELSE NULL
                          END,
@@ -371,7 +371,8 @@ class NotificationController
         $data = json_decode($request->getBody()->getContents(), true);
 
         // Add sender info
-        $data['sender_id'] = $user->id;
+        $accountId = $request->getAttribute('account_id') ?? $user->id;
+        $data['sender_id'] = $accountId;
         $data['sender_role'] = $user->role;
 
         $result = $this->create($data);

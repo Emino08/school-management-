@@ -1,6 +1,6 @@
 <?php
 
-// Simple smoke test script for SABITECK backend running on http://localhost:8080
+// Simple smoke test script for the backend running on http://localhost:8080
 // Usage: php backend1/tests/smoke_test.php
 
 function call_api($method, $url, $token = null, $body = null)
@@ -31,7 +31,7 @@ function call_api($method, $url, $token = null, $body = null)
 
 $base = 'http://localhost:8080/api';
 
-echo "=== SABITECK API Smoke Test ===\n";
+echo "=== API Smoke Test ===\n";
 
 // 1) Health
 [$code, $resp] = call_api('GET', "$base/health");

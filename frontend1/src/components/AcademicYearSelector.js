@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { Badge } from '@/components/ui/badge';
 import { MdCalendarToday } from 'react-icons/md';
 import { toast } from 'sonner';

@@ -1,9 +1,44 @@
 import axios from 'axios';
 
-// Configure base URL from environment
-const apiBase = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL)
-  || (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BASE_URL)
-  || '';
+const parseList = (value) =>
+  (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const resolveBaseUrl = () => {
+  const defaultLocal = 'http://localhost:8080/api';
+  const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
+  const nodeEnv = typeof process !== 'undefined' ? process.env : undefined;
+
+  const prodBase =
+    (env && env.VITE_API_BASE_URL) ||
+    (nodeEnv && nodeEnv.REACT_APP_BASE_URL) ||
+    '';
+
+  const localOverride =
+    (env && env.VITE_API_BASE_URL_LOCAL) ||
+    (nodeEnv && nodeEnv.REACT_APP_BASE_URL_LOCAL) ||
+    '';
+
+  const parsedHosts = parseList(env?.VITE_PRODUCTION_HOSTS);
+  const productionHosts =
+    parsedHosts.length > 0
+      ? parsedHosts
+      : ['boschool.org', 'www.boschool.org', 'backend.boschool.org'];
+
+  const isBrowser = typeof window !== 'undefined';
+  const hostname = isBrowser ? window.location.hostname : '';
+  const isProductionHost = hostname && productionHosts.includes(hostname);
+
+  if (!hostname || !isProductionHost) {
+    return localOverride || defaultLocal;
+  }
+
+  return prodBase || defaultLocal;
+};
+
+const apiBase = resolveBaseUrl();
 if (apiBase) {
   axios.defaults.baseURL = apiBase;
 }

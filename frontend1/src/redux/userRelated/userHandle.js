@@ -20,6 +20,7 @@ export const loginUser = (fields, role) => async (dispatch) => {
         // Map role to proper endpoint
         const roleMap = {
             'Admin': 'admin',
+            'Principal': 'admin',
             'Student': 'students',
             'Teacher': 'teachers'
         };
@@ -58,6 +59,7 @@ export const registerUser = (fields, role) => async (dispatch) => {
         // Map role to proper endpoint
         const roleMap = {
             'Admin': 'admin',
+            'Principal': 'admin',
             'Student': 'students',
             'Teacher': 'teachers'
         };

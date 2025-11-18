@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import bgpic from "../assets/designlogin.jpg";
 import { LightPurpleButton } from "../components/buttonStyles";
 import { loginUser } from "../redux/userRelated/userHandle";
 import { toast } from "sonner";
+import BoSchoolLogo from "@/assets/Bo-School-logo.png";
 
 const LoginPage = ({ role }) => {
   const dispatch = useDispatch();
@@ -19,9 +20,11 @@ const LoginPage = ({ role }) => {
   const { status, currentUser, response, error, currentRole } = useSelector(
     (state) => state.user,
   );
+  const [searchParams] = useSearchParams();
   const [toggle, setToggle] = useState(false);
   const [guestLoader, setGuestLoader] = useState(false);
   const [loader, setLoader] = useState(false);
+  const [adminAccountType, setAdminAccountType] = useState("Admin");
 
   const [emailError, setEmailError] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
@@ -29,6 +32,7 @@ const LoginPage = ({ role }) => {
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    const effectiveRole = role === "Admin" ? adminAccountType : role;
 
     if (role === "Student") {
       const rollNum = event.target.rollNumber.value;
@@ -41,7 +45,7 @@ const LoginPage = ({ role }) => {
       }
       const fields = { rollNum, password };
       setLoader(true);
-      dispatch(loginUser(fields, role));
+      dispatch(loginUser(fields, effectiveRole));
     } else {
       const email = event.target.email.value;
       const password = event.target.password.value;
@@ -54,7 +58,7 @@ const LoginPage = ({ role }) => {
 
       const fields = { email, password };
       setLoader(true);
-      dispatch(loginUser(fields, role));
+      dispatch(loginUser(fields, effectiveRole));
     }
   };
 
@@ -71,8 +75,12 @@ const LoginPage = ({ role }) => {
     if (role === "Admin") {
       const email = "yogendra@12";
       const fields = { email, password };
+      if (adminAccountType === "Principal") {
+        toast.info("Guest mode is available for administrator accounts only.");
+        return;
+      }
       setGuestLoader(true);
-      dispatch(loginUser(fields, role));
+      dispatch(loginUser(fields, adminAccountType));
     } else if (role === "Student") {
       const rollNum = "1";
       const fields = { rollNum, password };
@@ -87,12 +95,21 @@ const LoginPage = ({ role }) => {
   };
 
   useEffect(() => {
+    if (role === "Admin") {
+      const accountParam = searchParams.get("account");
+      if (accountParam && accountParam.toLowerCase() === "principal") {
+        setAdminAccountType("Principal");
+      }
+    }
+  }, [role, searchParams]);
+
+  useEffect(() => {
     if (status === "success" || currentUser !== null) {
       console.log(currentRole);
       toast.success("Login successful!", {
         description: `Welcome back, ${currentUser?.name || "User"}!`,
       });
-      if (currentRole === "Admin") {
+      if (currentRole === "Admin" || currentRole === "Principal") {
         navigate("/Admin/dashboard");
       } else if (currentRole === "Student") {
         navigate("/Student/dashboard");
@@ -114,19 +131,55 @@ const LoginPage = ({ role }) => {
     }
   }, [status, currentRole, navigate, error, response, currentUser]);
 
+  const portalTitle = role === "Admin" ? `${adminAccountType} Login` : `${role} Login`;
+  const portalDescription =
+    role === "Admin"
+      ? "Select how you'd like to access the administrative portal"
+      : "Welcome back! Please enter your details";
+
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
       {/* Left Side - Form */}
       <div className="flex items-center justify-center p-8 bg-white">
         <Card className="w-full max-w-md border-0 shadow-none">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-4xl text-purple-900 text-center">{role} Login</CardTitle>
+            <div className="flex justify-center">
+              <img
+                src={BoSchoolLogo}
+                alt="Bo School crest"
+                className="h-16 w-auto drop-shadow-[0_12px_20px_rgba(0,0,0,0.35)]"
+              />
+            </div>
+            <CardTitle className="text-4xl text-purple-900 text-center">{portalTitle}</CardTitle>
             <CardDescription className="text-center text-base">
-              Welcome back! Please enter your details
+              {portalDescription}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {role === "Admin" && (
+                <div>
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Administrative Role
+                  </Label>
+                  <div className="mt-2 flex gap-3">
+                    {["Admin", "Principal"].map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setAdminAccountType(type)}
+                        className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
+                          adminAccountType === type
+                            ? "border-purple-600 bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-100"
+                            : "border-gray-300 text-gray-600 hover:border-purple-400 dark:border-gray-600 dark:text-gray-300"
+                        }`}
+                      >
+                        {type === "Admin" ? "Administrator" : "Principal"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {role === "Student" ? (
                 <div className="space-y-2">
                   <Label htmlFor="rollNumber">ID Number</Label>

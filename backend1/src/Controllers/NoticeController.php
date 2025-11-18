@@ -140,7 +140,7 @@ class NoticeController
         $user = $request->getAttribute('user');
 
         try {
-            $adminId = $user->role === 'Admin' ? $user->id : $user->admin_id;
+            $adminId = $request->getAttribute('admin_id') ?? ($user->admin_id ?? $user->id);
             $stats = $this->noticeModel->getNoticeStats($adminId);
 
             $response->getBody()->write(json_encode(['success' => true, 'stats' => $stats]));

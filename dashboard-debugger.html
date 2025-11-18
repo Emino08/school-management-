@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Integration Debugger</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        .section { margin: 20px 0; padding: 15px; background: #252526; border-radius: 5px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        .info { color: #9cdcfe; }
+        button { padding: 10px 20px; margin: 5px; background: #0e639c; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #1177bb; }
+        pre { background: #1e1e1e; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Admin Dashboard Integration Debugger</h1>
+    
+    <div class="section">
+        <h2>Step 1: Check localStorage</h2>
+        <button onclick="checkLocalStorage()">Check localStorage</button>
+        <pre id="localStorage-result"></pre>
+    </div>
+
+    <div class="section">
+        <h2>Step 2: Test API Connection</h2>
+        <button onclick="testAPI()">Test API (/api/admin/stats)</button>
+        <pre id="api-result"></pre>
+    </div>
+
+    <div class="section">
+        <h2>Step 3: Verify Token</h2>
+        <button onclick="verifyToken()">Decode & Verify JWT Token</button>
+        <pre id="token-result"></pre>
+    </div>
+
+    <div class="section">
+        <h2>Step 4: Integration Status</h2>
+        <button onclick="checkIntegration()">Check Full Integration</button>
+        <pre id="integration-result"></pre>
+    </div>
+
+    <script>
+        function checkLocalStorage() {
+            const result = document.getElementById('localStorage-result');
+            result.innerHTML = '<span class="info">Checking localStorage...</span>\n\n';
+            
+            const user = localStorage.getItem('user');
+            const token = localStorage.getItem('token');
+            
+            if (!user && !token) {
+                result.innerHTML += '<span class="error">❌ No user data found in localStorage!</span>\n';
+                result.innerHTML += '<span class="warning">⚠️  You need to log in first.</span>\n';
+                return;
+            }
+            
+            if (user) {
+                try {
+                    const userData = JSON.parse(user);
+                    result.innerHTML += '<span class="success">✅ User found in localStorage</span>\n\n';
+                    result.innerHTML += '<span class="info">User Data:</span>\n';
+                    result.innerHTML += JSON.stringify(userData, null, 2) + '\n\n';
+                    
+                    if (userData.id) {
+                        result.innerHTML += '<span class="success">✅ User ID: ' + userData.id + '</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="error">❌ User ID missing!</span>\n';
+                    }
+                    
+                    if (userData.token) {
+                        result.innerHTML += '<span class="success">✅ Token present (length: ' + userData.token.length + ')</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="error">❌ Token missing!</span>\n';
+                    }
+                    
+                    if (userData.email) {
+                        result.innerHTML += '<span class="success">✅ Email: ' + userData.email + '</span>\n';
+                    }
+                } catch (e) {
+                    result.innerHTML += '<span class="error">❌ Failed to parse user data: ' + e.message + '</span>\n';
+                }
+            }
+            
+            if (token) {
+                result.innerHTML += '\n<span class="warning">⚠️  Found standalone token in localStorage</span>\n';
+            }
+        }
+
+        async function testAPI() {
+            const result = document.getElementById('api-result');
+            result.innerHTML = '<span class="info">Testing API connection...</span>\n\n';
+            
+            const user = localStorage.getItem('user');
+            if (!user) {
+                result.innerHTML += '<span class="error">❌ No user in localStorage. Cannot test API.</span>\n';
+                return;
+            }
+            
+            try {
+                const userData = JSON.parse(user);
+                if (!userData.token) {
+                    result.innerHTML += '<span class="error">❌ No token found in user data.</span>\n';
+                    return;
+                }
+                
+                result.innerHTML += '<span class="info">Making request to: http://localhost:8080/api/admin/stats</span>\n\n';
+                
+                const response = await fetch('http://localhost:8080/api/admin/stats?refresh=true', {
+                    headers: {
+                        'Authorization': 'Bearer ' + userData.token
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.innerHTML += '<span class="success">✅ API Response (Status ' + response.status + '):</span>\n\n';
+                    result.innerHTML += JSON.stringify(data, null, 2) + '\n\n';
+                    
+                    if (data.success) {
+                        result.innerHTML += '<span class="success">✅ Success: true</span>\n';
+                        result.innerHTML += '<span class="success">✅ Students: ' + data.stats.total_students + '</span>\n';
+                        result.innerHTML += '<span class="success">✅ Classes: ' + data.stats.total_classes + '</span>\n';
+                        result.innerHTML += '<span class="success">✅ Teachers: ' + data.stats.total_teachers + '</span>\n';
+                        result.innerHTML += '<span class="success">✅ Subjects: ' + data.stats.total_subjects + '</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="error">❌ API returned success: false</span>\n';
+                    }
+                } else {
+                    result.innerHTML += '<span class="error">❌ API Error (Status ' + response.status + '):</span>\n\n';
+                    result.innerHTML += JSON.stringify(data, null, 2) + '\n';
+                }
+            } catch (e) {
+                result.innerHTML += '<span class="error">❌ Request failed: ' + e.message + '</span>\n';
+                result.innerHTML += '<span class="warning">⚠️  Make sure backend server is running on port 8080</span>\n';
+            }
+        }
+
+        function verifyToken() {
+            const result = document.getElementById('token-result');
+            result.innerHTML = '<span class="info">Verifying token...</span>\n\n';
+            
+            const user = localStorage.getItem('user');
+            if (!user) {
+                result.innerHTML += '<span class="error">❌ No user in localStorage.</span>\n';
+                return;
+            }
+            
+            try {
+                const userData = JSON.parse(user);
+                if (!userData.token) {
+                    result.innerHTML += '<span class="error">❌ No token in user data.</span>\n';
+                    return;
+                }
+                
+                const token = userData.token;
+                const parts = token.split('.');
+                
+                if (parts.length !== 3) {
+                    result.innerHTML += '<span class="error">❌ Invalid JWT format (should have 3 parts)</span>\n';
+                    return;
+                }
+                
+                const payload = JSON.parse(atob(parts[1]));
+                
+                result.innerHTML += '<span class="success">✅ Token decoded successfully</span>\n\n';
+                result.innerHTML += '<span class="info">Token Payload:</span>\n';
+                result.innerHTML += JSON.stringify(payload, null, 2) + '\n\n';
+                
+                if (payload.admin_id) {
+                    result.innerHTML += '<span class="success">✅ admin_id present: ' + payload.admin_id + '</span>\n';
+                } else {
+                    result.innerHTML += '<span class="error">❌ admin_id MISSING!</span>\n';
+                    result.innerHTML += '<span class="warning">⚠️  You need to log out and log back in to get updated token.</span>\n';
+                }
+                
+                if (payload.id) {
+                    result.innerHTML += '<span class="success">✅ id present: ' + payload.id + '</span>\n';
+                }
+                
+                if (payload.role) {
+                    result.innerHTML += '<span class="success">✅ role: ' + payload.role + '</span>\n';
+                }
+                
+                if (payload.exp) {
+                    const expDate = new Date(payload.exp * 1000);
+                    const now = new Date();
+                    const expired = expDate < now;
+                    
+                    if (expired) {
+                        result.innerHTML += '<span class="error">❌ Token EXPIRED on: ' + expDate.toLocaleString() + '</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="success">✅ Token expires: ' + expDate.toLocaleString() + '</span>\n';
+                    }
+                }
+            } catch (e) {
+                result.innerHTML += '<span class="error">❌ Failed to decode token: ' + e.message + '</span>\n';
+            }
+        }
+
+        async function checkIntegration() {
+            const result = document.getElementById('integration-result');
+            result.innerHTML = '<span class="info">Checking full integration...</span>\n\n';
+            
+            let allGood = true;
+            
+            // Check 1: localStorage
+            result.innerHTML += '<span class="info">1. Checking localStorage...</span>\n';
+            const user = localStorage.getItem('user');
+            if (user) {
+                try {
+                    const userData = JSON.parse(user);
+                    if (userData.id && userData.token) {
+                        result.innerHTML += '<span class="success">   ✅ User data valid</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="error">   ❌ User data incomplete</span>\n';
+                        allGood = false;
+                    }
+                } catch (e) {
+                    result.innerHTML += '<span class="error">   ❌ Invalid user data</span>\n';
+                    allGood = false;
+                }
+            } else {
+                result.innerHTML += '<span class="error">   ❌ No user in localStorage</span>\n';
+                allGood = false;
+            }
+            
+            // Check 2: Token
+            result.innerHTML += '\n<span class="info">2. Checking token...</span>\n';
+            try {
+                const userData = JSON.parse(user);
+                const parts = userData.token.split('.');
+                const payload = JSON.parse(atob(parts[1]));
+                
+                if (payload.admin_id) {
+                    result.innerHTML += '<span class="success">   ✅ Token has admin_id</span>\n';
+                } else {
+                    result.innerHTML += '<span class="error">   ❌ Token missing admin_id</span>\n';
+                    allGood = false;
+                }
+                
+                if (payload.exp) {
+                    const expDate = new Date(payload.exp * 1000);
+                    if (expDate > new Date()) {
+                        result.innerHTML += '<span class="success">   ✅ Token not expired</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="error">   ❌ Token expired</span>\n';
+                        allGood = false;
+                    }
+                }
+            } catch (e) {
+                result.innerHTML += '<span class="error">   ❌ Token invalid</span>\n';
+                allGood = false;
+            }
+            
+            // Check 3: API
+            result.innerHTML += '\n<span class="info">3. Testing API...</span>\n';
+            try {
+                const userData = JSON.parse(user);
+                const response = await fetch('http://localhost:8080/api/admin/stats', {
+                    headers: { 'Authorization': 'Bearer ' + userData.token }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        result.innerHTML += '<span class="success">   ✅ API responds correctly</span>\n';
+                        result.innerHTML += '<span class="success">   ✅ Stats: S=' + data.stats.total_students + ', C=' + data.stats.total_classes + ', T=' + data.stats.total_teachers + '</span>\n';
+                    } else {
+                        result.innerHTML += '<span class="error">   ❌ API returned success=false</span>\n';
+                        allGood = false;
+                    }
+                } else {
+                    result.innerHTML += '<span class="error">   ❌ API error (status ' + response.status + ')</span>\n';
+                    allGood = false;
+                }
+            } catch (e) {
+                result.innerHTML += '<span class="error">   ❌ API not reachable</span>\n';
+                allGood = false;
+            }
+            
+            // Final verdict
+            result.innerHTML += '\n' + '='.repeat(50) + '\n';
+            if (allGood) {
+                result.innerHTML += '<span class="success">✅ ALL CHECKS PASSED!</span>\n';
+                result.innerHTML += '<span class="success">✅ Integration working correctly.</span>\n';
+                result.innerHTML += '<span class="info">ℹ️  If dashboard still shows 0, clear browser cache and hard refresh (Ctrl+F5)</span>\n';
+            } else {
+                result.innerHTML += '<span class="error">❌ SOME CHECKS FAILED</span>\n';
+                result.innerHTML += '<span class="warning">⚠️  Fix the issues above before proceeding.</span>\n';
+            }
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            checkLocalStorage();
+        });
+    </script>
+</body>
+</html>

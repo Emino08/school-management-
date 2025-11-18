@@ -30,11 +30,12 @@ class PrincipalRemarksController
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
 
+        $role = strtolower($user->role ?? '');
         // Only admin/principal can add remarks
-        if ($user->role !== 'admin') {
+        if (!in_array($role, ['admin', 'principal'], true)) {
             $response->getBody()->write(json_encode([
                 'success' => false,
-                'message' => 'Only principal can add remarks'
+                'message' => 'Only administrators or principals can add remarks'
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
         }
@@ -108,7 +109,7 @@ class PrincipalRemarksController
             $this->logger->logFromRequest(
                 $request,
                 $user->id,
-                'admin',
+                $role ?: 'admin',
                 $action === 'created' ? 'create' : 'update',
                 "Principal {$action} remarks for Term {$data['term']}",
                 'principal_remark',
