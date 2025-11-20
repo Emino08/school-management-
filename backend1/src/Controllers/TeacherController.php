@@ -191,7 +191,8 @@ class TeacherController
                     'is_class_master' => $teacherData['is_class_master'],
                     'class_master_of' => $teacherData['class_master_of'],
                     'is_exam_officer' => $teacherData['is_exam_officer']
-                ]
+                ],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -422,7 +423,8 @@ class TeacherController
                 "Updated teacher: {$teacher['name']}",
                 'teacher',
                 $args['id'],
-                $data
+                $data,
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
             
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Teacher updated successfully']));
@@ -474,7 +476,8 @@ class TeacherController
                 "{$action} teacher: {$teacher['name']}",
                 'teacher',
                 $args['id'],
-                ['delete_type' => $hardDelete ? 'hard' : 'soft']
+                ['delete_type' => $hardDelete ? 'hard' : 'soft'],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
             
             $response->getBody()->write(json_encode(['success' => true, 'message' => $message]));
@@ -513,7 +516,9 @@ class TeacherController
                 'restore',
                 "Restored teacher: {$teacher['name']}",
                 'teacher',
-                $args['id']
+                $args['id'],
+                null,
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
             
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Teacher restored successfully']));
@@ -600,7 +605,8 @@ class TeacherController
                 "Removed subject assignment",
                 'teacher_assignment',
                 null,
-                ['teacher_id' => $args['teacherId'], 'subject_id' => $args['subjectId'], 'academic_year_id' => $currentYear['id']]
+                ['teacher_id' => $args['teacherId'], 'subject_id' => $args['subjectId'], 'academic_year_id' => $currentYear['id']],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Subject removed from teacher']));
@@ -1194,9 +1200,5 @@ class TeacherController
         }
     }
 }
-
-
-
-
 
 

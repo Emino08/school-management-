@@ -9,7 +9,8 @@ import { useSelector } from 'react-redux';
 
 const EditStudentModal = ({ open, onOpenChange, student, onSuccess }) => {
   const { currentUser } = useSelector((state) => state.user);
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -20,7 +21,11 @@ const EditStudentModal = ({ open, onOpenChange, student, onSuccess }) => {
 
   useEffect(() => {
     if (open && student) {
-      setName(student.name || '');
+      const fullName = (student.name || '').trim().split(/\s+/);
+      const derivedFirst = student.first_name || fullName.shift() || '';
+      const derivedLast = student.last_name || fullName.join(' ');
+      setFirstName(derivedFirst);
+      setLastName(derivedLast);
       setEmail(student.email || '');
       setPhone(student.phone || '');
       setAddress(student.address || '');
@@ -34,7 +39,9 @@ const EditStudentModal = ({ open, onOpenChange, student, onSuccess }) => {
     setSaving(true);
     try {
       const payload = {
-        name,
+        first_name: firstName,
+        last_name: lastName,
+        name: `${firstName} ${lastName}`.trim(),
         email,
         phone,
         address,
@@ -63,8 +70,12 @@ const EditStudentModal = ({ open, onOpenChange, student, onSuccess }) => {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Label htmlFor="firstName">First Name</Label>
+            <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="lastName">Last Name</Label>
+            <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -93,4 +104,3 @@ const EditStudentModal = ({ open, onOpenChange, student, onSuccess }) => {
 };
 
 export default EditStudentModal;
-

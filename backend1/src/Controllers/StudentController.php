@@ -49,8 +49,14 @@ class StudentController
             $data['class_id'] = $data['sclassName'];
         }
 
+        $nameParts = $this->extractNameParts($data);
+        $data['first_name'] = $nameParts['first_name'];
+        $data['last_name'] = $nameParts['last_name'];
+        $data['name'] = trim($data['first_name'] . ' ' . $data['last_name']);
+
         $errors = Validator::validate($data, [
-            'name' => 'required',
+            'first_name' => 'required',
+            'last_name' => 'required',
             'roll_number' => 'required',
             'class_id' => 'required|numeric',
             'password' => 'required|min:6'
@@ -92,6 +98,8 @@ class StudentController
             // Build safe insert payload
             $studentData = [
                 'admin_id'      => $user->id,
+                'first_name'    => $data['first_name'],
+                'last_name'     => $data['last_name'],
                 'name'          => $data['name'],
                 'id_number'     => $data['roll_number'], // normalized to roll_number above
                 'email'         => $data['email'] ?? null,
@@ -313,6 +321,14 @@ class StudentController
     {
         $studentId = $args['id'];
         $data = Validator::sanitize($request->getParsedBody());
+        $student = $this->studentModel->findById($studentId);
+        if (!$student) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Student not found'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        }
 
         // Remove password from update if not provided
         if (isset($data['password']) && !empty($data['password'])) {
@@ -323,6 +339,17 @@ class StudentController
 
         // Remove protected fields
         unset($data['id'], $data['admin_id'], $data['roll_number'], $data['id_number']);
+
+        if (!empty($data['name']) && (empty($data['first_name']) || empty($data['last_name']))) {
+            $nameParts = $this->extractNameParts($data);
+            $data['first_name'] = $nameParts['first_name'];
+            $data['last_name'] = $nameParts['last_name'];
+            $data['name'] = trim($nameParts['first_name'] . ' ' . $nameParts['last_name']);
+        } elseif (isset($data['first_name']) || isset($data['last_name'])) {
+            $first = $data['first_name'] ?? $student['first_name'] ?? '';
+            $last = $data['last_name'] ?? $student['last_name'] ?? '';
+            $data['name'] = trim("$first $last");
+        }
 
         try {
             $this->studentModel->update($studentId, $data);
@@ -802,5 +829,35 @@ class StudentController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
-}
 
+    private function extractNameParts(array $data): array
+    {
+        $first = trim($data['first_name'] ?? '');
+        $last = trim($data['last_name'] ?? '');
+
+        if ((!$first || !$last) && !empty($data['name'])) {
+            $full = trim($data['name']);
+            if ($full !== '') {
+                $pieces = preg_split('/\s+/', $full, 2);
+                if (!$first && isset($pieces[0])) {
+                    $first = $pieces[0];
+                }
+                if (!$last) {
+                    $last = $pieces[1] ?? '';
+                }
+            }
+        }
+
+        if ($first === '' && isset($data['roll_number'])) {
+            $first = $data['roll_number'];
+        }
+        if ($last === '') {
+            $last = 'Student';
+        }
+
+        return [
+            'first_name' => $first,
+            'last_name' => $last,
+        ];
+    }
+}

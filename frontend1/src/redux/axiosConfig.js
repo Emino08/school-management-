@@ -46,6 +46,9 @@ if (apiBase) {
 // Add a request interceptor to attach JWT token to all requests
 axios.interceptors.request.use(
     (config) => {
+        if (config.skipAuthRedirect) {
+            config.__skipAuthRedirect = true;
+        }
         // Get user from localStorage
         const userStr = localStorage.getItem('user');
         try {
@@ -79,7 +82,8 @@ axios.interceptors.response.use(
         if (error.response && error.response.status === 401) {
             // Token expired or invalid
             const message = error.response.data?.message;
-            if (message && (message.includes('expired') || message.includes('Invalid'))) {
+            const skipLogout = error.config && error.config.__skipAuthRedirect;
+            if (!skipLogout && message && (message.includes('expired') || message.includes('Invalid'))) {
                 // Clear user data and redirect to login
                 localStorage.removeItem('user');
                 window.location.href = '/';

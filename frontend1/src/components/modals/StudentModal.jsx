@@ -30,7 +30,8 @@ const StudentModal = ({ open, onOpenChange, preSelectedClass, onSuccess }) => {
   const { currentUser, status, response } = useSelector((state) => state.user);
   
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     idNumber: '',
     password: '',
     classId: preSelectedClass || '',
@@ -111,16 +112,28 @@ const StudentModal = ({ open, onOpenChange, preSelectedClass, onSuccess }) => {
       return;
     }
 
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      toast.error('Please provide both first and last names');
+      return;
+    }
+
     setLoading(true);
 
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
     const fields = {
-      name: formData.name,
+      first_name: formData.firstName.trim(),
+      last_name: formData.lastName.trim(),
+      name: fullName,
       id_number: formData.idNumber,
       password: formData.password,
       class_id: parseInt(formData.classId, 10),
       adminID,
       role: 'Student',
       attendance: [],
+      email: formData.email || undefined,
+      phone: formData.phone || undefined,
+      address: formData.address || undefined,
+      date_of_birth: formData.dateOfBirth || undefined,
     };
 
     dispatch(registerUser(fields, 'Student'));
@@ -128,10 +141,11 @@ const StudentModal = ({ open, onOpenChange, preSelectedClass, onSuccess }) => {
 
   const handleClose = () => {
     setFormData({
-      name: '',
-      rollNum: '',
+      firstName: '',
+      lastName: '',
+      idNumber: '',
       password: '',
-      sclassName: preSelectedClass || '',
+      classId: preSelectedClass || '',
       email: '',
       phone: '',
       address: '',
@@ -166,15 +180,30 @@ const StudentModal = ({ open, onOpenChange, preSelectedClass, onSuccess }) => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-semibold flex items-center gap-1.5">
+                <Label htmlFor="firstName" className="text-sm font-semibold flex items-center gap-1.5">
                   <MdPerson className="w-4 h-4 text-green-600" />
-                  Full Name <span className="text-red-500">*</span>
+                  First Name <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="name"
-                  placeholder="e.g., John Doe"
-                  value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
+                  id="firstName"
+                  placeholder="e.g., John"
+                  value={formData.firstName}
+                  onChange={(e) => handleChange('firstName', e.target.value)}
+                  required
+                  className="h-11 border-gray-300 focus:border-green-500 focus:ring-green-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="lastName" className="text-sm font-semibold flex items-center gap-1.5">
+                  <MdPerson className="w-4 h-4 text-green-600" />
+                  Last Name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="lastName"
+                  placeholder="e.g., Doe"
+                  value={formData.lastName}
+                  onChange={(e) => handleChange('lastName', e.target.value)}
                   required
                   className="h-11 border-gray-300 focus:border-green-500 focus:ring-green-500"
                 />

@@ -47,17 +47,17 @@ const ActivityLogs = () => {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
+      const params = {};
       Object.keys(filters).forEach(key => {
-        if (filters[key] && filters[key] !== 'all') params.append(key, filters[key]);
+        if (filters[key] && filters[key] !== 'all') {
+          params[key] = filters[key];
+        }
       });
 
-      const response = await axios.get(
-        `${process.env.REACT_APP_BASE_URL}/admin/activity-logs?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-        }
-      );
+      const response = await axios.get('/admin/activity-logs', {
+        params,
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
 
       if (response.data.success) {
         setLogs(response.data.logs || []);
@@ -72,12 +72,9 @@ const ActivityLogs = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get(
-        `${process.env.REACT_APP_BASE_URL}/admin/activity-logs/stats`,
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-        }
-      );
+      const response = await axios.get('/admin/activity-logs/stats', {
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
 
       if (response.data.success) {
         setStats(response.data.stats);
@@ -109,18 +106,18 @@ const ActivityLogs = () => {
 
   const handleExport = async () => {
     try {
-      const params = new URLSearchParams();
+      const params = {};
       Object.keys(filters).forEach(key => {
-        if (filters[key]) params.append(key, filters[key]);
+        if (filters[key] && filters[key] !== 'all') {
+          params[key] = filters[key];
+        }
       });
 
-      const response = await axios.get(
-        `${process.env.REACT_APP_BASE_URL}/admin/activity-logs/export?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-          responseType: 'blob',
-        }
-      );
+      const response = await axios.get('/admin/activity-logs/export', {
+        params,
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+        responseType: 'blob',
+      });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');

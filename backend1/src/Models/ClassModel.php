@@ -38,6 +38,46 @@ class ClassModel extends BaseModel
         return $stmt->fetchAll();
     }
 
+    public function getClassWithDetails($classId, $adminId = null, $academicYearId = null)
+    {
+        $adminFilter = '';
+        $params = [
+            ':class_id' => $classId,
+            ':academic_year_id' => $academicYearId
+        ];
+
+        if ($adminId !== null) {
+            $adminFilter = ' AND c.admin_id = :admin_id';
+            $params[':admin_id'] = $adminId;
+        }
+
+        $sql = "SELECT c.*,
+                       COUNT(DISTINCT se.student_id) as student_count,
+                       COUNT(DISTINCT s.id) as subject_count,
+                       (
+                           SELECT t.name FROM teachers t
+                           WHERE t.is_class_master = 1 AND t.class_master_of = c.id
+                           ORDER BY t.id ASC LIMIT 1
+                       ) AS class_master_name,
+                       (
+                           SELECT t.id FROM teachers t
+                           WHERE t.is_class_master = 1 AND t.class_master_of = c.id
+                           ORDER BY t.id ASC LIMIT 1
+                       ) AS class_master_id
+                FROM {$this->table} c
+                LEFT JOIN student_enrollments se ON c.id = se.class_id
+                    AND se.academic_year_id = :academic_year_id
+                    AND se.status = 'active'
+                LEFT JOIN subjects s ON c.id = s.class_id
+                WHERE c.id = :class_id{$adminFilter}
+                GROUP BY c.id
+                LIMIT 1";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetch();
+    }
+
     public function deleteClass($classId)
     {
         // Check if class has any students

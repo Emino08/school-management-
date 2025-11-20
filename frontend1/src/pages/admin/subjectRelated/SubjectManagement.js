@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import axios from "axios";
@@ -33,6 +33,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   BookOpen,
   Users,
   TrendingUp,
@@ -53,7 +61,6 @@ const SubjectManagement = () => {
   const navigate = useNavigate();
   const { currentUser } = useSelector((state) => state.user);
   const [subjects, setSubjects] = useState([]);
-  const [filteredSubjects, setFilteredSubjects] = useState([]);
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -65,6 +72,7 @@ const SubjectManagement = () => {
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [viewSubject, setViewSubject] = useState(null);
 
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -80,10 +88,6 @@ const SubjectManagement = () => {
     fetchSubjects();
     fetchClasses();
   }, []);
-
-  useEffect(() => {
-    filterSubjects();
-  }, [subjects, searchTerm, filterClass]);
 
   const fetchSubjects = async () => {
     setLoading(true);
@@ -151,26 +155,169 @@ const SubjectManagement = () => {
     });
   };
 
-  const filterSubjects = () => {
-    let filtered = [...subjects];
+  const subjectDetail = useMemo(() => {
+    if (!viewSubject) return null;
+    const classList = viewSubject.displayClassList || [];
+    const className =
+      viewSubject.displayClassName ||
+      classList.join(", ") ||
+      viewSubject.class_name ||
+      "Unassigned";
+    const teacherName =
+      viewSubject.displayTeacherName ||
+      viewSubject.teacher_name ||
+      "Not assigned";
+    const teacherEmail =
+      viewSubject.displayTeacherEmail ||
+      viewSubject.teacher_email ||
+      "Not provided";
+    const teacherPhone =
+      viewSubject.displayTeacherPhone ||
+      viewSubject.teacher_phone ||
+      "Not provided";
+    const studentCount =
+      viewSubject.displayStudentCount ??
+      viewSubject.student_count ??
+      "0";
+    const status =
+      viewSubject.displayStatus ||
+      (teacherName === "Not assigned" ? "Pending" : "Active");
 
-    // Search filter
+    const stats = [
+      { label: "Class", value: className },
+      { label: "Teacher", value: teacherName },
+      { label: "Enrolled Students", value: studentCount },
+      { label: "Status", value: status },
+    ];
+
+    const infoRows = [
+      { label: "Subject Code", value: viewSubject.subject_code || "—" },
+      { label: "Curriculum Type", value: viewSubject.curriculum || viewSubject.type || "—" },
+      { label: "Term", value: viewSubject.term || viewSubject.semester || "—" },
+      {
+        label: "Created",
+        value: viewSubject.created_at
+          ? new Date(viewSubject.created_at).toLocaleDateString()
+          : "—",
+      },
+      {
+        label: "Last Updated",
+        value: viewSubject.updated_at
+          ? new Date(viewSubject.updated_at).toLocaleDateString()
+          : "—",
+      },
+      {
+        label: "Description",
+        value: viewSubject.description || "No additional description provided.",
+      },
+    ];
+
+    const tags = [];
+    if (viewSubject.level) tags.push(`Level ${viewSubject.level}`);
+    if (viewSubject.category) tags.push(viewSubject.category);
+    if (viewSubject.is_core) tags.push("Core Subject");
+
+    return {
+      subject: viewSubject,
+      stats,
+      infoRows,
+      tags,
+      teacher: {
+        name: teacherName,
+        email: teacherEmail,
+        phone: teacherPhone,
+      },
+      classList,
+    };
+  }, [viewSubject]);
+
+  const normalizedSubjects = useMemo(() => {
+    return subjects.map((subject) => {
+      const classId = subject.class_id || subject.classId;
+      const classMatch =
+        classId && classes.length
+          ? classes.find((cls) => String(cls.id) === String(classId))
+          : null;
+      const classCandidates = new Set();
+      [
+        subject.class_name,
+        subject.className,
+        subject.sclassName,
+        classMatch?.class_name,
+        classMatch?.sclassName,
+      ].forEach((name) => name && classCandidates.add(name));
+      if (Array.isArray(subject.classes)) {
+        subject.classes
+          .map((cls) => cls.class_name || cls.name || cls.sclassName)
+          .filter(Boolean)
+          .forEach((name) => classCandidates.add(name));
+      }
+      if (Array.isArray(subject.class_names)) {
+        subject.class_names.filter(Boolean).forEach((name) => classCandidates.add(name));
+      }
+      const classList = Array.from(classCandidates);
+      const className = classList.length ? classList.join(", ") : "Unassigned";
+
+      const teacherObject =
+        (subject.teacher && typeof subject.teacher === "object" ? subject.teacher : null) ||
+        (subject.assigned_teacher && typeof subject.assigned_teacher === "object"
+          ? subject.assigned_teacher
+          : null) ||
+        {};
+      const teacherString = typeof subject.teacher === "string" ? subject.teacher : null;
+      const teacherName =
+        subject.teacher_name ||
+        subject.teacherName ||
+        teacherObject.name ||
+        teacherString ||
+        "Not assigned";
+      const teacherEmail = subject.teacher_email || teacherObject.email || null;
+      const teacherPhone = subject.teacher_phone || teacherObject.phone || null;
+
+      const studentCount =
+        subject.student_count ??
+        subject.students_count ??
+        subject.enrollment_count ??
+        0;
+
+      const status = teacherName === "Not assigned" ? "Pending" : "Active";
+
+      return {
+        ...subject,
+        displayClassName: className,
+        displayClassList: classList,
+        displayTeacherName: teacherName,
+        displayTeacherEmail: teacherEmail,
+        displayTeacherPhone: teacherPhone,
+        displayStudentCount: studentCount,
+        displayStatus: status,
+        raw: subject,
+      };
+    });
+  }, [subjects, classes]);
+
+  const filteredSubjects = useMemo(() => {
+    let filtered = [...normalizedSubjects];
+
     if (searchTerm) {
+      const query = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (subject) =>
-          subject.subject_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          subject.subject_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          subject.teacher_name?.toLowerCase().includes(searchTerm.toLowerCase())
+          subject.subject_name?.toLowerCase().includes(query) ||
+          subject.subject_code?.toLowerCase().includes(query) ||
+          subject.displayTeacherName?.toLowerCase().includes(query) ||
+          subject.displayClassName?.toLowerCase().includes(query)
       );
     }
 
-    // Class filter
     if (filterClass !== "all") {
-      filtered = filtered.filter((s) => s.class_id?.toString() === filterClass);
+      filtered = filtered.filter((s) =>
+        (s.class_id || s.raw?.class_id)?.toString() === filterClass
+      );
     }
 
-    setFilteredSubjects(filtered);
-  };
+    return filtered;
+  }, [normalizedSubjects, searchTerm, filterClass]);
 
   const handleDelete = async () => {
     if (!subjectToDelete) return;
@@ -206,9 +353,9 @@ const SubjectManagement = () => {
     const rows = filteredSubjects.map((s) => [
       s.subject_code || "N/A",
       s.subject_name,
-      s.class_name || "N/A",
-      s.teacher_name || "Not assigned",
-      s.student_count || 0,
+      s.displayClassName || "N/A",
+      s.displayTeacherName || "Not assigned",
+      s.displayStudentCount || 0,
     ]);
 
     const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
@@ -229,7 +376,7 @@ const SubjectManagement = () => {
 
   const handleEditSubject = (subject) => {
     setIsEditMode(true);
-    setEditingSubject(subject);
+    setEditingSubject(subject?.raw || subject);
     setShowSubjectModal(true);
   };
 
@@ -419,16 +566,16 @@ const SubjectManagement = () => {
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">
-                          {subject.class_name || (
+                          {subject.displayClassName || (
                             <span className="text-gray-400">-</span>
                           )}
                         </span>
                       </TableCell>
                       <TableCell>
-                        {subject.teacher_name ? (
+                        {subject.displayTeacherName && subject.displayTeacherName !== "Not assigned" ? (
                           <div className="flex items-center gap-1">
                             <Users className="w-3 h-3 text-gray-400" />
-                            <span className="text-sm">{subject.teacher_name}</span>
+                            <span className="text-sm">{subject.displayTeacherName}</span>
                           </div>
                         ) : (
                           <Badge variant="outline" className="text-xs">
@@ -437,25 +584,25 @@ const SubjectManagement = () => {
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm">{subject.student_count || 0}</span>
+                        <span className="text-sm">{subject.displayStudentCount || 0}</span>
                       </TableCell>
                       <TableCell>
-                        {subject.teacher_name ? (
-                          <Badge className="bg-green-100 text-green-800">Active</Badge>
-                        ) : (
-                          <Badge className="bg-yellow-100 text-yellow-800">
-                            Pending
-                          </Badge>
-                        )}
+                        <Badge
+                          className={
+                            subject.displayStatus === "Active"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-yellow-100 text-yellow-800"
+                          }
+                        >
+                          {subject.displayStatus}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() =>
-                              navigate(`/Admin/subjects/view/${subject.id}`)
-                            }
+                            onClick={() => setViewSubject(subject)}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -470,7 +617,7 @@ const SubjectManagement = () => {
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              setSubjectToDelete(subject);
+                              setSubjectToDelete(subject.raw || subject);
                               setShowDeleteDialog(true);
                             }}
                             className="text-red-600 hover:text-red-700"
@@ -496,6 +643,116 @@ const SubjectManagement = () => {
         editMode={isEditMode}
         subjectData={editingSubject}
       />
+
+      <Dialog
+        open={Boolean(viewSubject)}
+        onOpenChange={(open) => {
+          if (!open) setViewSubject(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {subjectDetail ? (
+            <>
+              <DialogHeader className="p-0">
+                <DialogTitle className="sr-only">Subject Details</DialogTitle>
+              </DialogHeader>
+              <div className="rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-lg p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-white/80">
+                      Subject Overview
+                    </p>
+                    <h3 className="text-2xl font-bold mt-1">
+                      {subjectDetail.subject.subject_name}
+                    </h3>
+                    <p className="text-white/80">
+                      Code: {subjectDetail.subject.subject_code || "—"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {subjectDetail.tags.length > 0
+                      ? subjectDetail.tags.map((tag) => (
+                          <Badge key={tag} variant="secondary" className="bg-white/15 text-white">
+                            {tag}
+                          </Badge>
+                        ))
+                      : (
+                        <Badge variant="secondary" className="bg-white/15 text-white">
+                          {subjectDetail.stats[3].value}
+                        </Badge>
+                      )}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {subjectDetail.stats.map((stat) => (
+                    <div key={stat.label} className="bg-white/10 rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-white/70">
+                        {stat.label}
+                      </p>
+                      <p className="text-lg font-semibold mt-1">{stat.value || "—"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6 py-4">
+                {subjectDetail.classList.length > 0 && (
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                      Assigned Classes
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {subjectDetail.classList.map((cls) => (
+                        <Badge key={cls} variant="outline">
+                          {cls}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    Subject Information
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {subjectDetail.infoRows.map((row) => (
+                      <div key={row.label} className="rounded-xl border border-gray-100 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                          {row.label}
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-900">{row.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    Assigned Teacher
+                  </p>
+                  <div className="rounded-xl border border-gray-100 p-4 flex flex-col gap-2">
+                    <div className="text-lg font-semibold text-gray-900">
+                      {subjectDetail.teacher.name}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Email: {subjectDetail.teacher.email}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Phone: {subjectDetail.teacher.phone}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setViewSubject(null)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

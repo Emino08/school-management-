@@ -10,6 +10,7 @@ import { underControl } from '../../../redux/userRelated/userSlice';
 import { toast } from 'sonner';
 import Classroom from "../../../assets/classroom.png";
 import { MdRotateRight } from "react-icons/md";
+import { ArrowLeft } from "lucide-react";
 
 const AddClass = () => {
     const [sclassName, setSclassName] = useState("");
@@ -63,7 +64,19 @@ const AddClass = () => {
 
     return (
         <>
-            <div className="flex flex-1 items-center justify-center">
+            <div className="px-6 pt-4">
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2 text-gray-600"
+                    onClick={() => navigate(-1)}
+                >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back
+                </Button>
+            </div>
+            <div className="flex flex-1 items-center justify-center px-6 pb-6">
                 <Card className="w-full max-w-[550px] mt-4">
                     <CardContent className="p-12">
                         <div className="flex items-center justify-center mb-6">

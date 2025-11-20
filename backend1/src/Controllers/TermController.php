@@ -179,7 +179,8 @@ class TermController
                 "Created {$totalTerms} terms for academic year ID: {$academicYearId}",
                 'term',
                 null,
-                ['academic_year_id' => $academicYearId, 'total_terms' => $totalTerms, 'exams_per_term' => $examsPerTerm]
+                ['academic_year_id' => $academicYearId, 'total_terms' => $totalTerms, 'exams_per_term' => $examsPerTerm],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -287,7 +288,8 @@ class TermController
                     "Auto-toggled from Term {$currentTerm} to Term {$nextTerm}",
                     'academic_year',
                     $academicYearId,
-                    ['from_term' => $currentTerm, 'to_term' => $nextTerm, 'reason' => 'exams_published_threshold_reached']
+                    ['from_term' => $currentTerm, 'to_term' => $nextTerm, 'reason' => 'exams_published_threshold_reached'],
+                    \App\Utils\ActivityLogger::guessDisplayName($user)
                 );
 
                 $response->getBody()->write(json_encode([
@@ -392,7 +394,9 @@ class TermController
                 'publish',
                 "Published exam ID: {$examId}",
                 'exam',
-                $examId
+                $examId,
+                null,
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -457,7 +461,8 @@ class TermController
                 "Manually toggled to Term {$newTermNumber}",
                 'academic_year',
                 $academicYearId,
-                ['new_term' => $newTermNumber]
+                ['new_term' => $newTermNumber],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([

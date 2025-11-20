@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import axios from "axios";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -34,6 +35,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Users,
   UserCheck,
   TrendingUp,
@@ -58,12 +67,17 @@ const StudentManagement = () => {
   const navigate = useNavigate();
   const { currentUser } = useSelector((state) => state.user);
   const [students, setStudents] = useState([]);
-  const [filteredStudents, setFilteredStudents] = useState([]);
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterClass, setFilterClass] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [exportOptions, setExportOptions] = useState({
+    includeContact: true,
+    includeGuardian: false,
+    includeStatus: true,
+    includeFees: true,
+  });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState(null);
   
@@ -73,6 +87,7 @@ const StudentManagement = () => {
   const fileInputRef = useRef(null);
   const [showEditStudentModal, setShowEditStudentModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
+  const [viewStudent, setViewStudent] = useState(null);
 
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -97,10 +112,66 @@ const StudentManagement = () => {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      toast.success("Template downloaded");
     } catch (e) {
       console.error('Template download failed', e);
+      toast.error("Failed to download template");
     }
   };
+
+  const formatDate = (value) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString();
+  };
+
+  const studentDetail = useMemo(() => {
+    if (!viewStudent) return null;
+    const student = viewStudent;
+    const raw = student.raw || student;
+
+    const stats = [
+      { label: "Class", value: student.displayClassName || "Not assigned" },
+      { label: "Status", value: student.displayStatus || "Active" },
+      { label: "Fees Status", value: student.displayFeesStatus || "Pending" },
+      { label: "Average Score", value: raw.class_average ?? "—" },
+    ];
+
+    const personalRows = [
+      { label: "First Name", value: student.displayFirstName || "—" },
+      { label: "Last Name", value: student.displayLastName || "—" },
+      { label: "ID / Admission", value: student.displayRollNumber || "—" },
+      { label: "Gender", value: raw.gender || "Not specified" },
+      { label: "Date of Birth", value: formatDate(raw.date_of_birth || raw.dob) },
+    ];
+
+    const contactRows = [
+      { label: "Email", value: student.displayEmail || "Not provided" },
+      { label: "Phone", value: student.displayPhone || "Not provided" },
+      { label: "Address", value: student.displayAddress || "Not provided" },
+    ];
+
+    const guardianRows = [
+      { label: "Guardian Name", value: student.displayGuardianName || "Not provided" },
+      { label: "Guardian Phone", value: student.displayGuardianPhone || "Not provided" },
+      { label: "Guardian Email", value: student.displayGuardianEmail || "Not provided" },
+    ];
+
+    const tags = [];
+    if (raw.shift) tags.push(`${raw.shift} Shift`);
+    if (raw.section) tags.push(`Section ${raw.section}`);
+    if (raw.special_need) tags.push("Special Need");
+
+    return {
+      student,
+      stats,
+      personalRows,
+      contactRows,
+      guardianRows,
+      tags,
+    };
+  }, [viewStudent]);
 
   const handleBulkUpload = async () => {
     if (!fileInputRef.current?.files?.length) return;
@@ -116,9 +187,13 @@ const StudentManagement = () => {
       const data = await res.json();
       if (data.success) {
         fetchStudents();
+        toast.success('Students uploaded successfully');
+      } else {
+        toast.error(data.message || 'Bulk upload failed');
       }
     } catch (e) {
       console.error('Bulk upload failed', e);
+      toast.error('Bulk upload failed');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -129,10 +204,6 @@ const StudentManagement = () => {
     fetchStudents();
     fetchClasses();
   }, []);
-
-  useEffect(() => {
-    filterStudents();
-  }, [students, searchTerm, filterClass, filterStatus]);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -165,6 +236,7 @@ const StudentManagement = () => {
       }
     } catch (error) {
       console.error("Error fetching classes:", error);
+      toast.error("Failed to load classes");
     }
   };
 
@@ -193,31 +265,83 @@ const StudentManagement = () => {
     });
   };
 
-  const filterStudents = () => {
-    let filtered = [...students];
+  const normalizedStudents = useMemo(() => {
+    return students.map((student) => {
+      const raw = student;
+      const classMatch =
+        raw.class_id && classes.length
+          ? classes.find((cls) => String(cls.id) === String(raw.class_id))
+          : null;
 
-    // Search filter
+      const [derivedFirst, derivedLast] = (() => {
+        const full = (raw.name || "").trim();
+        if (!full) return ["", ""];
+        const parts = full.split(/\s+/);
+        const first = parts.shift() || "";
+        const last = parts.join(" ");
+        return [first, last];
+      })();
+
+      const firstName = raw.first_name || derivedFirst || "";
+      const lastName = raw.last_name || derivedLast || "";
+      const fullName = raw.name || [firstName, lastName].filter(Boolean).join(" ").trim();
+
+      const className =
+        raw.class_name ||
+        classMatch?.class_name ||
+        classMatch?.sclassName ||
+        raw.sclassName?.sclassName ||
+        "Not assigned";
+
+      const guardianName = raw.parent_name || raw.guardian_name || "Not provided";
+      const guardianPhone = raw.parent_phone || raw.guardian_phone || "Not provided";
+      const guardianEmail = raw.parent_email || raw.guardian_email || "Not provided";
+
+      return {
+        ...raw,
+        raw,
+        displayFirstName: firstName,
+        displayLastName: lastName,
+        fullName,
+        displayClassName: className,
+        displayRollNumber: raw.roll_number || raw.id_number || "N/A",
+        displayStatus: (raw.status || "active").toString(),
+        displayFeesStatus: raw.fees_status || "pending",
+        displayEmail: raw.email || "Not provided",
+        displayPhone: raw.phone || "Not provided",
+        displayAddress: raw.address || "Not provided",
+        displayGuardianName: guardianName,
+        displayGuardianPhone: guardianPhone,
+        displayGuardianEmail: guardianEmail,
+      };
+    });
+  }, [students, classes]);
+
+  const filteredStudents = useMemo(() => {
+    let filtered = [...normalizedStudents];
+
     if (searchTerm) {
+      const query = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (student) =>
-          student.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          student.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          student.roll_number?.toLowerCase().includes(searchTerm.toLowerCase())
+          student.fullName.toLowerCase().includes(query) ||
+          student.displayEmail.toLowerCase().includes(query) ||
+          student.displayRollNumber.toLowerCase().includes(query)
       );
     }
 
-    // Class filter
     if (filterClass !== "all") {
-      filtered = filtered.filter((s) => s.class_id?.toString() === filterClass);
+      filtered = filtered.filter(
+        (s) => (s.class_id || s.raw?.class_id)?.toString() === filterClass
+      );
     }
 
-    // Status filter
     if (filterStatus !== "all") {
-      filtered = filtered.filter((s) => s.status === filterStatus);
+      filtered = filtered.filter((s) => s.displayStatus === filterStatus);
     }
 
-    setFilteredStudents(filtered);
-  };
+    return filtered;
+  }, [normalizedStudents, searchTerm, filterClass, filterStatus]);
 
   const handleDelete = async () => {
     if (!studentToDelete) return;
@@ -243,24 +367,58 @@ const StudentManagement = () => {
   };
 
   const exportToCSV = () => {
-    const headers = [
-      "Roll Number",
-      "Name",
-      "Email",
-      "Phone",
-      "Class",
-      "Status",
-      "Fees Status",
-    ];
-    const rows = filteredStudents.map((s) => [
-      s.roll_number || "N/A",
-      s.name,
-      s.email,
-      s.phone || "N/A",
-      s.class_name || "N/A",
-      s.status || "active",
-      s.fees_status || "pending",
-    ]);
+    if (filteredStudents.length === 0) {
+      toast.error("No students to export");
+      return;
+    }
+
+    const headers = ["Roll Number", "First Name", "Last Name", "Class"];
+    if (exportOptions.includeContact) {
+      headers.push("Email", "Phone", "Address");
+    }
+    if (exportOptions.includeGuardian) {
+      headers.push("Guardian Name", "Guardian Phone");
+    }
+    if (exportOptions.includeStatus) {
+      headers.push("Status");
+    }
+    if (exportOptions.includeFees) {
+      headers.push("Fees Status");
+    }
+
+    const rows = filteredStudents.map((student) => {
+      const row = [
+        student.displayRollNumber || "N/A",
+        student.displayFirstName || "",
+        student.displayLastName || "",
+        student.displayClassName || "N/A",
+      ];
+
+      if (exportOptions.includeContact) {
+        row.push(
+          student.displayEmail || "N/A",
+          student.displayPhone || "N/A",
+          student.displayAddress || "N/A"
+        );
+      }
+
+      if (exportOptions.includeGuardian) {
+        row.push(
+          student.displayGuardianName || "N/A",
+          student.displayGuardianPhone || "N/A"
+        );
+      }
+
+      if (exportOptions.includeStatus) {
+        row.push(student.displayStatus || "active");
+      }
+
+      if (exportOptions.includeFees) {
+        row.push(student.displayFeesStatus || "pending");
+      }
+
+      return row;
+    });
 
     const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -269,7 +427,7 @@ const StudentManagement = () => {
     a.href = url;
     a.download = `students_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
-    toast.success("Exported to CSV");
+    toast.success("Student export ready");
   };
 
   const getStatusBadge = (status) => {
@@ -277,6 +435,10 @@ const StudentManagement = () => {
       return <Badge className="bg-green-100 text-green-800">Active</Badge>;
     }
     return <Badge className="bg-gray-100 text-gray-800">Inactive</Badge>;
+  };
+
+  const handleExportToggle = (key, checked) => {
+    setExportOptions((prev) => ({ ...prev, [key]: Boolean(checked) }));
   };
 
   const getFeesBadge = (status) => {
@@ -328,6 +490,51 @@ const StudentManagement = () => {
             <div className="flex gap-2">
               <Button variant="outline" type="button" onClick={handleTemplateDownload}>Download Template</Button>
               <Button type="button" onClick={handleBulkUpload} disabled={uploading}>{uploading ? 'Uploading...' : 'Upload CSV'}</Button>
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-4">
+            <p className="text-sm font-semibold text-gray-700 mb-2">Export Columns</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="export-contact"
+                  checked={exportOptions.includeContact}
+                  onCheckedChange={(checked) => handleExportToggle("includeContact", checked)}
+                />
+                <Label htmlFor="export-contact" className="text-sm font-normal">
+                  Contact details
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="export-guardian"
+                  checked={exportOptions.includeGuardian}
+                  onCheckedChange={(checked) => handleExportToggle("includeGuardian", checked)}
+                />
+                <Label htmlFor="export-guardian" className="text-sm font-normal">
+                  Guardian info
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="export-status"
+                  checked={exportOptions.includeStatus}
+                  onCheckedChange={(checked) => handleExportToggle("includeStatus", checked)}
+                />
+                <Label htmlFor="export-status" className="text-sm font-normal">
+                  Status column
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="export-fees"
+                  checked={exportOptions.includeFees}
+                  onCheckedChange={(checked) => handleExportToggle("includeFees", checked)}
+                />
+                <Label htmlFor="export-fees" className="text-sm font-normal">
+                  Fees column
+                </Label>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -485,7 +692,8 @@ const StudentManagement = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>ID Number</TableHead>
-                    <TableHead>Name</TableHead>
+                    <TableHead>First Name</TableHead>
+                    <TableHead>Last Name</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Class</TableHead>
                     <TableHead>Status</TableHead>
@@ -498,53 +706,56 @@ const StudentManagement = () => {
                     <TableRow key={student.id}>
                       <TableCell>
                         <div className="font-mono text-sm font-medium">
-                          {student.roll_number || student.id_number || "-"}
+                          {student.displayRollNumber || "-"}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{student.displayFirstName || "-"}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{student.displayLastName || "-"}</div>
                       </TableCell>
                       <TableCell>
                         <div>
-                          <div className="font-medium">{student.name}</div>
-                          <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                          <div className="text-sm text-gray-900 flex items-center gap-1">
                             <Mail className="w-3 h-3" />
-                            {student.email}
+                            {student.displayEmail}
                           </div>
+                          {student.displayPhone && student.displayPhone !== "Not provided" ? (
+                            <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                              <Phone className="w-3 h-3 text-gray-400" />
+                              {student.displayPhone}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">No phone</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        {student.phone ? (
+                        {student.displayClassName && student.displayClassName !== "Not assigned" ? (
                           <div className="flex items-center gap-1 text-sm">
-                            <Phone className="w-3 h-3 text-gray-400" />
-                            {student.phone}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-sm">No phone</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {student.class_name ? (
-                          <div className="flex items-center gap-1">
                             <BookOpen className="w-3 h-3 text-gray-400" />
-                            <span className="text-sm">{student.class_name}</span>
+                            {student.displayClassName}
                           </div>
                         ) : (
                           <span className="text-gray-400 text-sm">-</span>
                         )}
                       </TableCell>
-                      <TableCell>{getStatusBadge(student.status)}</TableCell>
-                      <TableCell>{getFeesBadge(student.fees_status)}</TableCell>
+                      <TableCell>{getStatusBadge(student.displayStatus)}</TableCell>
+                      <TableCell>{getFeesBadge(student.displayFeesStatus)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => navigate(`/Admin/students/view/${student.id}`)}
+                            onClick={() => setViewStudent(student)}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleEditStudent(student)}
+                            onClick={() => handleEditStudent(student.raw || student)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -552,7 +763,7 @@ const StudentManagement = () => {
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              setStudentToDelete(student);
+                              setStudentToDelete(student.raw || student);
                               setShowDeleteDialog(true);
                             }}
                             className="text-red-600 hover:text-red-700"
@@ -583,6 +794,123 @@ const StudentManagement = () => {
         student={editingStudent}
         onSuccess={handleEditStudentSuccess}
       />
+
+      <Dialog
+        open={Boolean(viewStudent)}
+        onOpenChange={(open) => {
+          if (!open) setViewStudent(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {studentDetail ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="sr-only">Student Details</DialogTitle>
+              </DialogHeader>
+              <div className="rounded-2xl bg-gradient-to-r from-teal-600 via-cyan-600 to-blue-500 text-white shadow-lg p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-white/80">
+                      Student Profile
+                    </p>
+                    <h3 className="text-2xl font-bold mt-1">
+                      {studentDetail.student.fullName || "Student"}
+                    </h3>
+                    <p className="text-white/80">
+                      ID: {studentDetail.student.displayRollNumber || "—"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {studentDetail.tags.length > 0 ? (
+                      studentDetail.tags.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="bg-white/15 text-white">
+                          {tag}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant="secondary" className="bg-white/15 text-white">
+                        {studentDetail.stats[1].value}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {studentDetail.stats.map((stat) => (
+                    <div key={stat.label} className="bg-white/10 rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-white/70">
+                        {stat.label}
+                      </p>
+                      <p className="text-lg font-semibold mt-1">{stat.value || "—"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6 py-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    Personal Information
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {studentDetail.personalRows.map((row) => (
+                      <div key={row.label} className="rounded-xl border border-gray-100 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                          {row.label}
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-900">
+                          {row.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    Contact Information
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {studentDetail.contactRows.map((row) => (
+                      <div key={row.label} className="rounded-xl border border-gray-100 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                          {row.label}
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-900">
+                          {row.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    Guardian Information
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {studentDetail.guardianRows.map((row) => (
+                      <div key={row.label} className="rounded-xl border border-gray-100 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                          {row.label}
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-gray-900">
+                          {row.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setViewStudent(null)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

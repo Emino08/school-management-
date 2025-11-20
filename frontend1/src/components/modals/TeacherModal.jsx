@@ -3,36 +3,26 @@ import axios from 'axios';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { MdPerson, MdSave, MdClose, MdEmail, MdLock, MdSchool, MdPhone, MdBook } from 'react-icons/md';
-import { Users, Mail, Phone, BookOpen, Award, Search } from 'lucide-react';
+import { Users, BookOpen, Award, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDispatch, useSelector } from 'react-redux';
 import { registerUser } from '../../redux/userRelated/userHandle';
 import { underControl } from '../../redux/userRelated/userSlice';
-import { getAllSclasses } from '../../redux/sclassRelated/sclassHandle';
 import { getSubjectList } from '../../redux/sclassRelated/sclassHandle';
 
 const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID: propAdminID }) => {
   const dispatch = useDispatch();
   const { currentUser, status, response } = useSelector((state) => state.user);
-  const { sclassesList, subjectsList } = useSelector((state) => state.sclass);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -198,32 +188,33 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
     onOpenChange(false);
   };
 
-  const handleSubjectToggle = (subjectId) => {
-    const currentSubjects = formData.teachSubjects || [];
-    const isSelected = currentSubjects.includes(subjectId);
-    
-    let newSubjects;
-    if (isSelected) {
-      // Remove subject
-      newSubjects = currentSubjects.filter(id => id !== subjectId);
-    } else {
-      // Add subject
-      newSubjects = [...currentSubjects, subjectId];
-    }
-    
-    // Prepare update object
-    const updates = { teachSubjects: newSubjects };
-    
-    // Auto-assign class if not set (use first selected subject's class)
-    if (!formData.teachSclass && !isSelected) {
-      const selectedSubject = allSubjects?.find(s => (s._id || s.id)?.toString() === subjectId);
-      if (selectedSubject && selectedSubject.sclassName) {
-        updates.teachSclass = selectedSubject.sclassName?.toString();
+  const handleSubjectToggle = (subjectId, nextChecked) => {
+    setFormData((prev) => {
+      const currentSubjects = prev.teachSubjects || [];
+      const isSelected = currentSubjects.includes(subjectId);
+      const shouldSelect =
+        typeof nextChecked === 'boolean' ? nextChecked : !isSelected;
+
+      const updatedSubjects = shouldSelect
+        ? isSelected
+          ? currentSubjects
+          : [...currentSubjects, subjectId]
+        : currentSubjects.filter((id) => id !== subjectId);
+
+      const updates = { teachSubjects: updatedSubjects };
+
+      // Auto-assign class if not set (use first selected subject's class)
+      if (!prev.teachSclass && shouldSelect) {
+        const selectedSubject = allSubjects?.find(
+          (s) => (s._id || s.id)?.toString() === subjectId
+        );
+        if (selectedSubject?.sclassName) {
+          updates.teachSclass = selectedSubject.sclassName.toString();
+        }
       }
-    }
-    
-    // Single state update with all changes
-    setFormData(prev => ({ ...prev, ...updates }));
+
+      return { ...prev, ...updates };
+    });
   };
 
   // Filter subjects based on search query
@@ -409,20 +400,33 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
                       
                       console.log('TeacherModal - Rendering subject:', subject.subName, 'ID:', subjectId);
                       
+                      const handleToggle = () => handleSubjectToggle(subjectId, !isSelected);
+
                       return (
                         <div
                           key={subjectId}
-                          className={`flex items-center space-x-3 p-3 rounded-lg border-2 transition-all cursor-pointer hover:bg-orange-50 ${
-                            isSelected 
-                              ? 'border-orange-500 bg-orange-50' 
+                          className={`w-full text-left flex items-center space-x-3 p-3 rounded-lg border-2 transition-all hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                            isSelected
+                              ? 'border-orange-500 bg-orange-50'
                               : 'border-gray-200 hover:border-orange-300'
                           }`}
-                          onClick={() => handleSubjectToggle(subjectId)}
+                          role="button"
+                          tabIndex={0}
+                          onClick={handleToggle}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleToggle();
+                            }
+                          }}
+                          aria-pressed={isSelected}
                         >
-                          <Checkbox
+                          <input
+                            type="checkbox"
                             id={`subject-${subjectId}`}
                             checked={isSelected}
-                            className="w-5 h-5"
+                            className="w-5 h-5 accent-orange-600 cursor-pointer"
+                            onChange={(e) => handleSubjectToggle(subjectId, e.target.checked)}
                             onClick={(e) => e.stopPropagation()}
                           />
                           <div className="flex-1">

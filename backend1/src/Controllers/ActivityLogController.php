@@ -202,6 +202,7 @@ class ActivityLogController
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
+    }
 
     private function hasAdminPortalAccess($user): bool
     {

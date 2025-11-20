@@ -104,7 +104,9 @@ class ResultManagementController
                 'approve',
                 "Approved grade for result ID: {$resultId}",
                 'result',
-                $resultId
+                $resultId,
+                null,
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -163,7 +165,8 @@ class ResultManagementController
                 "Rejected grade for result ID: {$resultId}",
                 'result',
                 $resultId,
-                ['rejection_reason' => $data['rejection_reason']]
+                ['rejection_reason' => $data['rejection_reason']],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -280,7 +283,9 @@ class ResultManagementController
                 'approve',
                 "Approved grade update request ID: {$requestId}",
                 'grade_update_request',
-                $requestId
+                $requestId,
+                null,
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -339,7 +344,8 @@ class ResultManagementController
                 "Rejected grade update request ID: {$requestId}",
                 'grade_update_request',
                 $requestId,
-                ['rejection_reason' => $data['rejection_reason']]
+                ['rejection_reason' => $data['rejection_reason']],
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([
@@ -415,7 +421,9 @@ class ResultManagementController
                 'create',
                 "Requested grade update for result ID: {$data['result_id']}",
                 'grade_update_request',
-                $requestId
+                $requestId,
+                null,
+                \App\Utils\ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([

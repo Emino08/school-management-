@@ -5,15 +5,18 @@ namespace App\Controllers;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\Subject;
+use App\Models\AcademicYear;
 use App\Utils\Validator;
 
 class SubjectController
 {
     private $subjectModel;
+    private $academicYearModel;
 
     public function __construct()
     {
         $this->subjectModel = new Subject();
+        $this->academicYearModel = new AcademicYear();
     }
 
     public function create(Request $request, Response $response)
@@ -54,7 +57,11 @@ class SubjectController
         $user = $request->getAttribute('user');
 
         try {
-            $subjects = $this->subjectModel->findAll(['admin_id' => $user->id]);
+            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $subjects = $this->subjectModel->getSubjectsWithDetails(
+                $user->id,
+                $currentYear['id'] ?? null
+            );
             $response->getBody()->write(json_encode(['success' => true, 'subjects' => $subjects]));
             return $response->withHeader('Content-Type', 'application/json');
         } catch (\Exception $e) {

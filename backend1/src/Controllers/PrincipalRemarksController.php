@@ -114,7 +114,8 @@ class PrincipalRemarksController
                 "Principal {$action} remarks for Term {$data['term']}",
                 'principal_remark',
                 $remarkId,
-                ['term' => $data['term'], 'class_id' => $data['class_id']]
+                ['term' => $data['term'], 'class_id' => $data['class_id']],
+                ActivityLogger::guessDisplayName($user)
             );
 
             $response->getBody()->write(json_encode([

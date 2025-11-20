@@ -459,7 +459,8 @@ class PromotionController
                         'target_academic_year_id' => (int)$targetYearId,
                         'class_id' => (int)$classId,
                         'override_capacity' => $override
-                    ]
+                    ],
+                    \App\Utils\ActivityLogger::guessDisplayName($user)
                 );
             } catch (\Exception $e) {}
 

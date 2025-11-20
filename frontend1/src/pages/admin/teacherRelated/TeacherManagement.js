@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import axios from "axios";
@@ -33,6 +33,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Users,
   UserCheck,
   Award,
@@ -47,10 +55,23 @@ import {
   Eye,
   Filter,
   Download,
+  Upload,
   RefreshCw,
 } from "lucide-react";
 import TeacherModal from "@/components/modals/TeacherModal";
 import EditTeacherModal from "@/components/modals/EditTeacherModal";
+
+const parseSubjectList = (subjects) => {
+  if (!subjects) return [];
+  if (Array.isArray(subjects)) return subjects.filter(Boolean);
+  if (typeof subjects === "string") {
+    return subjects
+      .split(/[,|]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
 
 const TeacherManagement = () => {
   const navigate = useNavigate();
@@ -68,12 +89,15 @@ const TeacherManagement = () => {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState({ title: "", description: "", onConfirm: null });
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
   const smallSuccess = (msg) => toast.success(msg, { duration: 1500, position: 'bottom-right' });
   
   // Modal state
   const [showTeacherModal, setShowTeacherModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [teacherToEdit, setTeacherToEdit] = useState(null);
+  const [viewTeacher, setViewTeacher] = useState(null);
 
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -136,6 +160,54 @@ const TeacherManagement = () => {
       if (response.data.success) setClasses(response.data.classes || []);
     } catch (e) {
       console.error('Failed to fetch classes', e);
+    }
+  };
+
+  const handleTemplateDownload = async () => {
+    try {
+      const res = await fetch(`${API_URL}/teachers/bulk-template`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'teachers_template.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Template downloaded");
+    } catch (e) {
+      console.error('Template download failed', e);
+      toast.error("Failed to download template");
+    }
+  };
+
+  const handleBulkUpload = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${API_URL}/teachers/bulk-upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Teachers uploaded successfully');
+        fetchTeachers();
+      } else {
+        toast.error(data.message || 'Bulk upload failed');
+      }
+    } catch (e) {
+      console.error('Bulk upload failed', e);
+      toast.error('Bulk upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -206,6 +278,95 @@ const TeacherManagement = () => {
       toast.error(e.response?.data?.message || 'Failed to remove');
     }
   };
+
+  const viewTeacherDetails = useMemo(() => {
+    if (!viewTeacher) return null;
+    const subjects = parseSubjectList(viewTeacher.subjects);
+    const roles = [];
+    if (viewTeacher.is_class_master) roles.push("Class Master");
+    if (viewTeacher.is_exam_officer) roles.push("Exam Officer");
+    if (viewTeacher.can_approve_results) roles.push("Can Approve Results");
+    if (roles.length === 0) roles.push("Teacher");
+
+    const classMasterOf = viewTeacher.class_master_of || viewTeacher.classMasterOf;
+    const classMatch =
+      classMasterOf &&
+      classes.find((cls) => String(cls.id) === String(classMasterOf));
+    const classMasterLabel =
+      classMatch?.class_name ||
+      classMatch?.sclassName ||
+      (classMasterOf ? `Class #${classMasterOf}` : "Not assigned");
+
+    const primaryClass =
+      viewTeacher.class_name ||
+      viewTeacher.className ||
+      classMasterLabel ||
+      "Not assigned";
+
+    const experience =
+      viewTeacher.experience_years ?? viewTeacher.experienceYears ?? null;
+
+    const stats = [
+      { label: "Primary Class", value: primaryClass },
+      { label: "Subjects", value: subjects.length ? `${subjects.length}` : "None" },
+      {
+        label: "Experience",
+        value:
+          experience !== null
+            ? `${experience} year${experience === 1 ? "" : "s"}`
+            : "Not provided",
+      },
+      {
+        label: "Status",
+        value: viewTeacher.is_active === false ? "Inactive" : "Active",
+      },
+    ];
+
+    const infoGroups = [
+      {
+        title: "Professional Details",
+        rows: [
+          { label: "Teacher ID", value: viewTeacher.id },
+          { label: "Class Master Of", value: classMasterLabel },
+          { label: "Qualification", value: viewTeacher.qualification || "Not provided" },
+          { label: "Specialization", value: viewTeacher.specialization || "Not provided" },
+        ],
+      },
+      {
+        title: "Contact Details",
+        rows: [
+          { label: "Email", value: viewTeacher.email || "Not provided" },
+          { label: "Phone", value: viewTeacher.phone || "Not provided" },
+          { label: "Address", value: viewTeacher.address || "Not provided" },
+        ],
+      },
+      {
+        title: "Permissions",
+        rows: [
+          {
+            label: "Exam Officer",
+            value: viewTeacher.is_exam_officer ? "Yes" : "No",
+          },
+          {
+            label: "Class Master",
+            value: viewTeacher.is_class_master ? "Yes" : "No",
+          },
+          {
+            label: "Can Approve Results",
+            value: viewTeacher.can_approve_results ? "Yes" : "No",
+          },
+        ],
+      },
+    ];
+
+    return {
+      teacher: viewTeacher,
+      roles,
+      subjects,
+      stats,
+      infoGroups,
+    };
+  }, [viewTeacher, classes]);
 
   const filterTeachers = () => {
     let filtered = [...teachers];
@@ -324,10 +485,41 @@ const TeacherManagement = () => {
             Manage teachers, class masters, and exam officers
           </p>
         </div>
-        <Button onClick={handleAddTeacher} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add Teacher
-        </Button>
+        <div className="flex items-center gap-3">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={(e) => handleBulkUpload(e.target.files?.[0])}
+          />
+          <Button variant="outline" onClick={handleTemplateDownload} className="gap-2">
+            <Download className="w-4 h-4" />
+            Template
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            className="gap-2"
+            disabled={uploading}
+          >
+            {uploading ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" />
+                Upload CSV
+              </>
+            )}
+          </Button>
+          <Button onClick={handleAddTeacher} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add Teacher
+          </Button>
+        </div>
       </div>
 
       {/* Analytics Cards */}
@@ -559,7 +751,7 @@ const TeacherManagement = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/Admin/teachers/view/${teacher.id}`)}
+                          onClick={() => setViewTeacher(teacher)}
                         >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -591,6 +783,97 @@ const TeacherManagement = () => {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={Boolean(viewTeacher)}
+        onOpenChange={(open) => {
+          if (!open) setViewTeacher(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {viewTeacherDetails ? (
+            <>
+              <div className="rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 text-white shadow-lg p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-white/80">
+                      Teacher Overview
+                    </p>
+                    <h3 className="text-2xl font-bold mt-1">
+                      {viewTeacherDetails.teacher.name}
+                    </h3>
+                    <p className="text-white/80">
+                      {viewTeacherDetails.teacher.email || "Email not provided"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {viewTeacherDetails.roles.map((role) => (
+                      <Badge key={role} variant="secondary" className="bg-white/15 text-white">
+                        {role}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {viewTeacherDetails.stats.map((stat) => (
+                    <div key={stat.label} className="bg-white/10 rounded-xl p-3">
+                      <p className="text-xs uppercase tracking-wide text-white/70">
+                        {stat.label}
+                      </p>
+                      <p className="text-lg font-semibold mt-1">{stat.value || "—"}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6 py-4">
+                {viewTeacherDetails.infoGroups.map((group) => (
+                  <div key={group.title}>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                      {group.title}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {group.rows.map((row) => (
+                        <div key={row.label} className="rounded-xl border border-gray-100 p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                            {row.label}
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-gray-900">
+                            {row.value || "—"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    Assigned Subjects
+                  </p>
+                  {viewTeacherDetails.subjects.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {viewTeacherDetails.subjects.map((subject, index) => (
+                        <Badge key={`${subject}-${index}`} variant="outline">
+                          {subject}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No subjects assigned</p>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setViewTeacher(null)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Teacher Modal */}
       <TeacherModal

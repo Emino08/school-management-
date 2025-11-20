@@ -110,18 +110,37 @@ class ClassController
 
     public function getClass(Request $request, Response $response, $args)
     {
-        $class = $this->classModel->findById($args['id']);
-        if (!$class) {
-            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Class not found']));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+        $user = $request->getAttribute('user');
+
+        try {
+            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $class = $this->classModel->getClassWithDetails(
+                $args['id'],
+                $user->id ?? null,
+                $currentYear ? $currentYear['id'] : null
+            );
+
+            if (!$class) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => 'Class not found']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+            }
+
+            // Add frontend compatibility fields
+            $class['_id'] = $class['id'];
+            $class['sclassName'] = $class['class_name'];
+            $class['classMaster'] = $class['class_master_name'] ?? ($class['classMaster'] ?? null);
+            $class['studentCount'] = $class['student_count'] ?? 0;
+            $class['subjectCount'] = $class['subject_count'] ?? 0;
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'class' => $class
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Failed to fetch class: ' . $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
-
-        // Add frontend compatibility fields
-        $class['_id'] = $class['id'];
-        $class['sclassName'] = $class['class_name'];
-
-        $response->getBody()->write(json_encode($class));
-        return $response->withHeader('Content-Type', 'application/json');
     }
 
     public function update(Request $request, Response $response, $args)

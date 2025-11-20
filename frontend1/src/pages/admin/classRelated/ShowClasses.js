@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { MdDelete, MdPostAdd, MdPersonAddAlt1, MdAddCard, MdMoreVert } from "react-icons/md";
+import { ArrowLeft } from "lucide-react";
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { deleteUser } from '../../../redux/userRelated/userHandle';
@@ -141,14 +142,26 @@ const ShowClasses = () => {
     : 0;
 
   return (
-    <>
-      {loading ?
+    <div className="space-y-4">
+      <div className="px-6 pt-4">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="gap-2 text-gray-600"
+          onClick={() => navigate(-1)}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Button>
+      </div>
+      {loading ? (
         <div className="flex justify-center items-center h-64">
           <div className="text-lg">Loading classes...</div>
         </div>
-        :
+      ) : (
         <>
-          {getresponse ?
+          {getresponse ? (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
               <div className="text-center">
                 <h3 className="text-2xl font-semibold mb-2">No Classes Found</h3>
@@ -158,7 +171,7 @@ const ShowClasses = () => {
                 Add Class
               </Button>
             </div>
-            :
+          ) : (
             <>
               {/* Statistics Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -218,10 +231,11 @@ const ShowClasses = () => {
                 </div>
               )}
               <SpeedDialTemplate actions={actions} />
-            </>}
+            </>
+          )}
         </>
-      }
-    </>
+      )}
+    </div>
   );
 };
 

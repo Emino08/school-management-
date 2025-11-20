@@ -51,16 +51,72 @@ class Subject extends BaseModel
 
     public function deleteSubject($subjectId)
     {
-        // Check if subject has any grades
-        $sql = "SELECT COUNT(*) as count FROM grades WHERE subject_id = :subject_id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([':subject_id' => $subjectId]);
-        $result = $stmt->fetch();
+        // Guard: prevent deletion if dependent records exist in known tables
+        foreach (['exam_results', 'grades'] as $table) {
+            if ($this->tableExists($table)) {
+                $sql = "SELECT COUNT(*) as count FROM {$table} WHERE subject_id = :subject_id";
+                $stmt = $this->db->prepare($sql);
+                $stmt->execute([':subject_id' => $subjectId]);
+                $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if (!empty($result['count'])) {
+                    throw new \Exception('Cannot delete subject with existing results');
+                }
+                break;
+            }
+        }
 
-        if ($result['count'] > 0) {
-            throw new \Exception('Cannot delete subject with existing grades');
+        // Remove dependent teacher assignments if table exists
+        if ($this->tableExists('teacher_assignments')) {
+            $stmt = $this->db->prepare("DELETE FROM teacher_assignments WHERE subject_id = :subject_id");
+            $stmt->execute([':subject_id' => $subjectId]);
         }
 
         return $this->delete($subjectId);
+    }
+
+    public function getSubjectsWithDetails($adminId, $academicYearId = null)
+    {
+        $joinAssignments = "";
+        $params = [
+            ':admin_id' => $adminId,
+        ];
+
+        if ($academicYearId) {
+            $joinAssignments = "AND ta.academic_year_id = :academic_year_id";
+            $params[':academic_year_id'] = $academicYearId;
+        }
+
+        $sql = "SELECT s.*,
+                       c.class_name,
+                       t.name AS teacher_name,
+                       t.email AS teacher_email,
+                       t.phone AS teacher_phone,
+                       (
+                           SELECT COUNT(DISTINCT se.student_id)
+                           FROM student_enrollments se
+                           WHERE se.class_id = s.class_id
+                             AND se.status = 'active'
+                       ) AS student_count
+                FROM {$this->table} s
+                LEFT JOIN classes c ON s.class_id = c.id
+                LEFT JOIN teacher_assignments ta ON s.id = ta.subject_id {$joinAssignments}
+                LEFT JOIN teachers t ON ta.teacher_id = t.id
+                WHERE s.admin_id = :admin_id
+                ORDER BY s.subject_name";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    private function tableExists(string $table): bool
+    {
+        try {
+            $stmt = $this->db->prepare("SHOW TABLES LIKE :table");
+            $stmt->execute([':table' => $table]);
+            return (bool)$stmt->fetch();
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 }

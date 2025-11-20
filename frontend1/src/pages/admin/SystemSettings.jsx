@@ -24,84 +24,97 @@ import {
   FiCheck,
 } from 'react-icons/fi';
 
+const GENERAL_DEFAULTS = {
+  school_name: '',
+  school_code: '',
+  school_address: '',
+  school_phone: '',
+  school_email: '',
+  school_website: '',
+  school_logo: '',
+  academic_year_start_month: 9,
+  academic_year_end_month: 6,
+  timezone: 'Africa/Lagos',
+};
+
+const NOTIFICATION_DEFAULTS = {
+  email_enabled: true,
+  sms_enabled: false,
+  push_enabled: true,
+  notify_attendance: true,
+  notify_results: true,
+  notify_fees: true,
+  notify_complaints: true,
+};
+
+const EMAIL_DEFAULTS = {
+  smtp_host: '',
+  smtp_port: 587,
+  smtp_username: '',
+  smtp_password: '',
+  smtp_encryption: 'tls',
+  from_email: '',
+  from_name: '',
+};
+
+const SECURITY_DEFAULTS = {
+  force_password_change: false,
+  password_min_length: 6,
+  password_require_uppercase: true,
+  password_require_lowercase: true,
+  password_require_numbers: true,
+  password_require_special: false,
+  session_timeout: 30,
+  max_login_attempts: 5,
+  two_factor_enabled: false,
+};
+
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
+
 const SystemSettings = () => {
   const { currentUser } = useSelector((state) => state.user);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
 
-  const [generalSettings, setGeneralSettings] = useState({
-    school_name: '',
-    school_code: '',
-    school_address: '',
-    school_phone: '',
-    school_email: '',
-    school_website: '',
-    school_logo: '',
-    academic_year_start_month: 9,
-    academic_year_end_month: 6,
-    timezone: 'Africa/Lagos',
-  });
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    email_enabled: true,
-    sms_enabled: false,
-    push_enabled: true,
-    notify_attendance: true,
-    notify_results: true,
-    notify_fees: true,
-    notify_complaints: true,
-  });
-
-  const [emailSettings, setEmailSettings] = useState({
-    smtp_host: '',
-    smtp_port: 587,
-    smtp_username: '',
-    smtp_password: '',
-    smtp_encryption: 'tls',
-    from_email: '',
-    from_name: '',
-  });
-
-  const [securitySettings, setSecuritySettings] = useState({
-    force_password_change: false,
-    password_min_length: 6,
-    password_require_uppercase: true,
-    password_require_lowercase: true,
-    password_require_numbers: true,
-    password_require_special: false,
-    session_timeout: 30,
-    max_login_attempts: 5,
-    two_factor_enabled: false,
-  });
+  const [generalSettings, setGeneralSettings] = useState(() => ({ ...GENERAL_DEFAULTS }));
+  const [notificationSettings, setNotificationSettings] = useState(() => ({ ...NOTIFICATION_DEFAULTS }));
+  const [emailSettings, setEmailSettings] = useState(() => ({ ...EMAIL_DEFAULTS }));
+  const [securitySettings, setSecuritySettings] = useState(() => ({ ...SECURITY_DEFAULTS }));
 
   const [maintenanceMode, setMaintenanceMode] = useState(false);
 
   useEffect(() => {
+    if (!currentUser?.token) return;
     fetchSettings();
-  }, []);
+  }, [currentUser?.token]);
 
   const fetchSettings = async () => {
     try {
+      if (!currentUser?.token) {
+        toast.error('Please log in to view settings');
+        return;
+      }
       setLoading(true);
-      const response = await axios.get(
-        `${process.env.REACT_APP_BASE_URL}/admin/settings`,
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-        }
-      );
+      const response = await axios.get('/admin/settings', {
+        skipAuthRedirect: true,
+      });
 
       if (response.data.success) {
         const settings = response.data.settings;
-        setGeneralSettings(settings.general || generalSettings);
-        setNotificationSettings(settings.notifications || notificationSettings);
-        setEmailSettings(settings.email || emailSettings);
-        setSecuritySettings(settings.security || securitySettings);
-        setMaintenanceMode(settings.maintenance_mode || false);
+        setGeneralSettings({ ...GENERAL_DEFAULTS, ...(settings?.general || {}) });
+        setNotificationSettings({ ...NOTIFICATION_DEFAULTS, ...(settings?.notifications || {}) });
+        setEmailSettings({ ...EMAIL_DEFAULTS, ...(settings?.email || {}) });
+        setSecuritySettings({ ...SECURITY_DEFAULTS, ...(settings?.security || {}) });
+        setMaintenanceMode(Boolean(settings?.maintenance_mode));
       }
     } catch (error) {
-      console.error('Error fetching settings:', error);
-      toast.error('Failed to load settings');
+      if (error.response?.status === 401) {
+        toast.error('Your session has expired. Please log in again.');
+      } else {
+        console.error('Error fetching settings:', error);
+        toast.error('Failed to load settings');
+      }
     } finally {
       setLoading(false);
     }
@@ -110,38 +123,50 @@ const SystemSettings = () => {
   const handleSaveSettings = async (settingsType, data) => {
     try {
       setSaving(true);
+      if (!currentUser?.token) {
+        toast.error('Not authorized');
+        return;
+      }
       const response = await axios.put(
-        `${process.env.REACT_APP_BASE_URL}/admin/settings`,
+        '/admin/settings',
         {
           type: settingsType,
           settings: data,
         },
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-        }
+        { skipAuthRedirect: true }
       );
 
       if (response.data.success) {
         toast.success('Settings saved successfully');
+        if (['general', 'system'].includes(settingsType)) {
+          fetchSettings();
+        }
       }
     } catch (error) {
-      console.error('Error saving settings:', error);
-      toast.error('Failed to save settings');
+      if (error.response?.status === 401) {
+        toast.error('Your session has expired. Please log in again.');
+      } else {
+        console.error('Error saving settings:', error);
+        toast.error('Failed to save settings');
+      }
     } finally {
       setSaving(false);
     }
   };
 
   const handleBackup = async () => {
+    let toastId;
     try {
-      toast.loading('Creating backup...');
+      toastId = toast.loading('Creating backup...');
+      if (!currentUser?.token) {
+        toast.dismiss(toastId);
+        toast.error('Not authorized');
+        return;
+      }
       const response = await axios.post(
-        `${process.env.REACT_APP_BASE_URL}/admin/settings/backup`,
+        '/admin/settings/backup',
         {},
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-          responseType: 'blob',
-        }
+        { responseType: 'blob', skipAuthRedirect: true }
       );
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -151,31 +176,43 @@ const SystemSettings = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      toast.dismiss();
+      toast.dismiss(toastId);
       toast.success('Backup created successfully');
     } catch (error) {
-      toast.dismiss();
-      console.error('Error creating backup:', error);
-      toast.error('Failed to create backup');
+      if (toastId) toast.dismiss(toastId);
+      if (error.response?.status === 401) {
+        toast.error('Your session has expired. Please log in again.');
+      } else {
+        console.error('Error creating backup:', error);
+        toast.error('Failed to create backup');
+      }
     }
   };
 
   const handleClearCache = async () => {
     try {
+      if (!currentUser?.token) {
+        toast.error('Not authorized');
+        return;
+      }
       const response = await axios.post(
-        `${process.env.REACT_APP_BASE_URL}/admin/cache/clear`,
+        '/admin/cache/clear',
         {},
-        {
-          headers: { Authorization: `Bearer ${currentUser?.token}` },
-        }
+        { skipAuthRedirect: true }
       );
 
       if (response.data.success) {
         toast.success('Cache cleared successfully');
+      } else {
+        toast.error(response.data.message || 'Failed to clear cache');
       }
     } catch (error) {
-      console.error('Error clearing cache:', error);
-      toast.error('Failed to clear cache');
+      if (error.response?.status === 401) {
+        toast.error('Your session has expired. Please log in again.');
+      } else {
+        console.error('Error clearing cache:', error);
+        toast.error('Failed to clear cache');
+      }
     }
   };
 
@@ -726,6 +763,15 @@ const SystemSettings = () => {
                     checked={maintenanceMode}
                     onCheckedChange={setMaintenanceMode}
                   />
+                </div>
+                <div className="flex justify-end mt-4">
+                  <Button
+                    onClick={() => handleSaveSettings('system', { maintenance_mode: maintenanceMode })}
+                    disabled={saving}
+                  >
+                    <FiSave className="mr-2 h-4 w-4" />
+                    Save Changes
+                  </Button>
                 </div>
               </CardContent>
             </Card>

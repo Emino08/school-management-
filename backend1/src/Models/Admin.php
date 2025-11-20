@@ -176,24 +176,144 @@ class Admin extends BaseModel
 
     private function ensurePrincipalSupport(): void
     {
+        if ($this->hasPrincipalSupport()) {
+            return;
+        }
+
+        $this->attemptPrincipalSchemaUpgrade();
+
         if (!$this->hasPrincipalSupport()) {
             throw new \RuntimeException('Principal role columns not found on admins table. Please run the 034_add_principal_role migration.');
         }
     }
 
+    private function attemptPrincipalSchemaUpgrade(): void
+    {
+        try {
+            $this->db->beginTransaction();
+
+            if (!$this->columnExists('contact_name')) {
+                $this->execSchemaChange(
+                    "ALTER TABLE {$this->table}
+                     ADD COLUMN contact_name VARCHAR(255) NULL AFTER school_name",
+                    [1060]
+                );
+            }
+
+            if (!$this->columnExists('role')) {
+                $this->execSchemaChange(
+                    "ALTER TABLE {$this->table}
+                     ADD COLUMN role ENUM('admin','principal') NOT NULL DEFAULT 'admin' AFTER password",
+                    [1060]
+                );
+            } else {
+                $this->execSchemaChange(
+                    "ALTER TABLE {$this->table}
+                     MODIFY COLUMN role ENUM('admin','principal') NOT NULL DEFAULT 'admin'"
+                );
+            }
+
+            if (!$this->columnExists('parent_admin_id')) {
+                $this->execSchemaChange(
+                    "ALTER TABLE {$this->table}
+                     ADD COLUMN parent_admin_id INT NULL AFTER role",
+                    [1060]
+                );
+            }
+
+            $indexStmt = $this->db->prepare("SHOW INDEX FROM {$this->table} WHERE Key_name = 'idx_parent_admin'");
+            $indexStmt->execute();
+            if (!$indexStmt->fetch(\PDO::FETCH_ASSOC)) {
+                $this->execSchemaChange(
+                    "ALTER TABLE {$this->table}
+                     ADD INDEX idx_parent_admin (parent_admin_id)",
+                    [1061]
+                );
+            }
+
+            $databaseName = $this->db->query('SELECT DATABASE()')->fetchColumn();
+            if ($databaseName) {
+                $fkStmt = $this->db->prepare(
+                    "SELECT CONSTRAINT_NAME
+                       FROM information_schema.KEY_COLUMN_USAGE
+                      WHERE TABLE_SCHEMA = :schema
+                        AND TABLE_NAME = :table_name
+                        AND COLUMN_NAME = 'parent_admin_id'
+                        AND REFERENCED_TABLE_NAME = :ref_table
+                      LIMIT 1"
+                );
+                $fkStmt->execute([
+                    ':schema' => $databaseName,
+                    ':table_name' => $this->table,
+                    ':ref_table' => $this->table
+                ]);
+                if (!$fkStmt->fetch(\PDO::FETCH_ASSOC)) {
+                    $this->execSchemaChange(
+                        "ALTER TABLE {$this->table}
+                         ADD CONSTRAINT fk_admin_parent_admin
+                         FOREIGN KEY (parent_admin_id) REFERENCES {$this->table}(id) ON DELETE CASCADE",
+                        [1826, 1828, 1832]
+                    );
+                }
+            }
+
+            $this->execSchemaChange(
+                "UPDATE {$this->table}
+                 SET role = 'admin'
+                 WHERE role IS NULL OR role = ''"
+            );
+            $this->execSchemaChange(
+                "UPDATE {$this->table}
+                 SET parent_admin_id = NULL
+                 WHERE role = 'admin'"
+            );
+
+            if ($this->db->inTransaction()) {
+                $this->db->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw new \RuntimeException(
+                'Principal role columns not found on admins table and automatic migration failed: ' . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    private function execSchemaChange(string $sql, array $ignoreErrorCodes = []): void
+    {
+        try {
+            $this->db->exec($sql);
+        } catch (\PDOException $e) {
+            $errorCode = $e->errorInfo[1] ?? null;
+            if ($errorCode !== null && in_array($errorCode, $ignoreErrorCodes, true)) {
+                return;
+            }
+            throw $e;
+        }
+    }
+
     private function columnExists(string $column): bool
     {
-        static $cache = [];
-        if (array_key_exists($column, $cache) && $cache[$column] === true) {
-            return true;
-        }
         try {
-            $stmt = $this->db->prepare("SHOW COLUMNS FROM {$this->table} LIKE :column");
-            $stmt->execute([':column' => $column]);
-            $cache[$column] = (bool)$stmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt = $this->db->prepare(
+                "SELECT 1
+                   FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = :table_name
+                    AND COLUMN_NAME = :column
+                  LIMIT 1"
+            );
+            $stmt->execute([
+                ':table_name' => $this->table,
+                ':column' => $column
+            ]);
+            return (bool) $stmt->fetchColumn();
         } catch (\Exception $e) {
-            $cache[$column] = false;
+            return false;
         }
-        return $cache[$column];
     }
 }

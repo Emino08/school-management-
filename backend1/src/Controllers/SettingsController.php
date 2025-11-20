@@ -7,46 +7,103 @@ use PDO;
 use PDOException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Psr7\Stream;
 
 class SettingsController
 {
     private $db;
+    private $defaultGeneral = [
+        'school_name' => '',
+        'school_code' => '',
+        'school_address' => '',
+        'school_phone' => '',
+        'school_email' => '',
+        'school_website' => '',
+        'school_logo' => '',
+        'academic_year_start_month' => 9,
+        'academic_year_end_month' => 6,
+        'timezone' => 'UTC',
+    ];
+
+    private $defaultNotifications = [
+        'email_enabled' => true,
+        'sms_enabled' => false,
+        'push_enabled' => true,
+        'notify_attendance' => true,
+        'notify_results' => true,
+        'notify_fees' => true,
+        'notify_complaints' => true,
+    ];
+
+    private $defaultEmail = [
+        'smtp_host' => '',
+        'smtp_port' => 587,
+        'smtp_username' => '',
+        'smtp_password' => '',
+        'smtp_encryption' => 'tls',
+        'from_email' => '',
+        'from_name' => '',
+    ];
+
+    private $defaultSecurity = [
+        'force_password_change' => false,
+        'password_min_length' => 6,
+        'password_require_uppercase' => true,
+        'password_require_lowercase' => true,
+        'password_require_numbers' => true,
+        'password_require_special' => false,
+        'session_timeout' => 30,
+        'max_login_attempts' => 5,
+        'two_factor_enabled' => false,
+    ];
 
     public function __construct()
     {
         $this->db = Database::getInstance()->getConnection();
+        $this->ensureExtendedColumns();
     }
 
     // Get school settings
     public function get()
     {
         try {
-            $stmt = $this->db->query("SELECT * FROM school_settings LIMIT 1");
-            $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+            $settings = $this->getSettingsRow();
 
             if (!$settings) {
-                // Return default settings if none exist
                 return [
                     'success' => true,
                     'settings' => [
-                        'school_name' => '',
-                        'school_code' => '',
-                        'address' => '',
-                        'phone' => '',
-                        'email' => '',
-                        'website' => '',
-                        'logo_url' => null,
-                        'principal_name' => '',
-                        'academic_year_start_month' => 9,
-                        'currency' => 'USD',
-                        'timezone' => 'UTC'
+                        'general' => $this->defaultGeneral,
+                        'notifications' => $this->defaultNotifications,
+                        'email' => $this->defaultEmail,
+                        'security' => $this->defaultSecurity,
+                        'maintenance_mode' => false,
                     ]
                 ];
             }
 
+            $general = [
+                'school_name' => $settings['school_name'] ?? '',
+                'school_code' => $settings['school_code'] ?? '',
+                'school_address' => $settings['address'] ?? '',
+                'school_phone' => $settings['phone'] ?? '',
+                'school_email' => $settings['email'] ?? '',
+                'school_website' => $settings['website'] ?? '',
+                'school_logo' => $settings['logo_url'] ?? '',
+                'academic_year_start_month' => (int)($settings['academic_year_start_month'] ?? 9),
+                'academic_year_end_month' => (int)($settings['academic_year_end_month'] ?? 6),
+                'timezone' => $settings['timezone'] ?? 'UTC',
+            ];
+
             return [
                 'success' => true,
-                'settings' => $settings
+                'settings' => [
+                    'general' => array_merge($this->defaultGeneral, $general),
+                    'notifications' => $this->decodeSettings($settings['notification_settings'] ?? null, $this->defaultNotifications),
+                    'email' => $this->decodeSettings($settings['email_settings'] ?? null, $this->defaultEmail),
+                    'security' => $this->decodeSettings($settings['security_settings'] ?? null, $this->defaultSecurity),
+                    'maintenance_mode' => (bool)($settings['maintenance_mode'] ?? 0),
+                ]
             ];
         } catch (PDOException $e) {
             return [
@@ -60,66 +117,30 @@ class SettingsController
     public function update($data)
     {
         try {
-            // Check if settings exist
-            $stmt = $this->db->query("SELECT id FROM school_settings LIMIT 1");
-            $existingId = $stmt->fetchColumn();
+            $type = $data['type'] ?? 'general';
+            $payload = $data['settings'] ?? [];
 
-            if ($existingId) {
-                // Update existing settings
-                $stmt = $this->db->prepare("
-                    UPDATE school_settings
-                    SET school_name = :school_name,
-                        school_code = :school_code,
-                        address = :address,
-                        phone = :phone,
-                        email = :email,
-                        website = :website,
-                        logo_url = :logo_url,
-                        principal_name = :principal_name,
-                        academic_year_start_month = :academic_year_start_month,
-                        currency = :currency,
-                        timezone = :timezone,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = :id
-                ");
-
-                $stmt->execute([
-                    ':id' => $existingId,
-                    ':school_name' => $data['school_name'],
-                    ':school_code' => $data['school_code'] ?? null,
-                    ':address' => $data['address'] ?? null,
-                    ':phone' => $data['phone'] ?? null,
-                    ':email' => $data['email'] ?? null,
-                    ':website' => $data['website'] ?? null,
-                    ':logo_url' => $data['logo_url'] ?? null,
-                    ':principal_name' => $data['principal_name'] ?? null,
-                    ':academic_year_start_month' => $data['academic_year_start_month'] ?? 9,
-                    ':currency' => $data['currency'] ?? 'USD',
-                    ':timezone' => $data['timezone'] ?? 'UTC'
-                ]);
-            } else {
-                // Insert new settings
-                $stmt = $this->db->prepare("
-                    INSERT INTO school_settings
-                    (school_name, school_code, address, phone, email, website, logo_url,
-                     principal_name, academic_year_start_month, currency, timezone)
-                    VALUES (:school_name, :school_code, :address, :phone, :email, :website,
-                            :logo_url, :principal_name, :academic_year_start_month, :currency, :timezone)
-                ");
-
-                $stmt->execute([
-                    ':school_name' => $data['school_name'],
-                    ':school_code' => $data['school_code'] ?? null,
-                    ':address' => $data['address'] ?? null,
-                    ':phone' => $data['phone'] ?? null,
-                    ':email' => $data['email'] ?? null,
-                    ':website' => $data['website'] ?? null,
-                    ':logo_url' => $data['logo_url'] ?? null,
-                    ':principal_name' => $data['principal_name'] ?? null,
-                    ':academic_year_start_month' => $data['academic_year_start_month'] ?? 9,
-                    ':currency' => $data['currency'] ?? 'USD',
-                    ':timezone' => $data['timezone'] ?? 'UTC'
-                ]);
+            switch ($type) {
+                case 'general':
+                    $this->saveGeneralSettings($payload);
+                    break;
+                case 'notifications':
+                    $this->saveJsonSettings('notification_settings', $payload, $this->defaultNotifications);
+                    break;
+                case 'email':
+                    $this->saveJsonSettings('email_settings', $payload, $this->defaultEmail);
+                    break;
+                case 'security':
+                    $this->saveJsonSettings('security_settings', $payload, $this->defaultSecurity);
+                    break;
+                case 'system':
+                    $this->saveSystemSettings($payload);
+                    break;
+                default:
+                    return [
+                        'success' => false,
+                        'message' => 'Invalid settings type'
+                    ];
             }
 
             return [
@@ -131,6 +152,137 @@ class SettingsController
                 'success' => false,
                 'message' => 'Error updating school settings: ' . $e->getMessage()
             ];
+        }
+    }
+
+    private function decodeSettings(?string $payload, array $defaults): array
+    {
+        if (!$payload) {
+            return $defaults;
+        }
+
+        $decoded = json_decode($payload, true);
+        if (!is_array($decoded)) {
+            return $defaults;
+        }
+
+        return array_merge($defaults, $decoded);
+    }
+
+    private function ensureSettingsRow(): int
+    {
+        $stmt = $this->db->query("SELECT id FROM school_settings LIMIT 1");
+        $existingId = (int)$stmt->fetchColumn();
+
+        if ($existingId) {
+            return $existingId;
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO school_settings (school_name, school_code, address, phone, email, website, logo_url, principal_name, academic_year_start_month, academic_year_end_month, currency, timezone)
+            VALUES ('', '', '', '', '', '', '', '', 9, 6, 'USD', 'UTC')
+        ");
+        $stmt->execute();
+
+        return (int)$this->db->lastInsertId();
+    }
+
+    private function saveGeneralSettings(array $data): void
+    {
+        $settings = array_merge($this->defaultGeneral, $data);
+        $id = $this->ensureSettingsRow();
+
+        $stmt = $this->db->prepare("
+            UPDATE school_settings
+               SET school_name = :school_name,
+                   school_code = :school_code,
+                   address = :address,
+                   phone = :phone,
+                   email = :email,
+                   website = :website,
+                   logo_url = :logo_url,
+                   academic_year_start_month = :academic_year_start_month,
+                   academic_year_end_month = :academic_year_end_month,
+                   timezone = :timezone,
+                   updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+        ");
+
+        $stmt->execute([
+            ':id' => $id,
+            ':school_name' => $settings['school_name'],
+            ':school_code' => $settings['school_code'] ?? null,
+            ':address' => $settings['school_address'] ?? null,
+            ':phone' => $settings['school_phone'] ?? null,
+            ':email' => $settings['school_email'] ?? null,
+            ':website' => $settings['school_website'] ?? null,
+            ':logo_url' => $settings['school_logo'] ?? null,
+            ':academic_year_start_month' => $settings['academic_year_start_month'] ?? 9,
+            ':academic_year_end_month' => $settings['academic_year_end_month'] ?? 6,
+            ':timezone' => $settings['timezone'] ?? 'UTC',
+        ]);
+    }
+
+    private function saveJsonSettings(string $column, array $data, array $defaults): void
+    {
+        $payload = json_encode(array_merge($defaults, $data));
+        $id = $this->ensureSettingsRow();
+
+        $stmt = $this->db->prepare("
+            UPDATE school_settings
+               SET {$column} = :payload,
+                   updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+        ");
+        $stmt->execute([
+            ':payload' => $payload,
+            ':id' => $id,
+        ]);
+    }
+
+    private function saveSystemSettings(array $data): void
+    {
+        $id = $this->ensureSettingsRow();
+        $stmt = $this->db->prepare("
+            UPDATE school_settings
+               SET maintenance_mode = :mode,
+                   updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+        ");
+        $stmt->execute([
+            ':mode' => !empty($data['maintenance_mode']) ? 1 : 0,
+            ':id' => $id,
+        ]);
+    }
+
+    private function getSettingsRow(): ?array
+    {
+        $stmt = $this->db->query("SELECT * FROM school_settings LIMIT 1");
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $settings ?: null;
+    }
+
+    private function columnExists(string $column): bool
+    {
+        $stmt = $this->db->prepare("SHOW COLUMNS FROM school_settings LIKE :column");
+        $stmt->execute([':column' => $column]);
+        return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    private function ensureExtendedColumns(): void
+    {
+        $columns = [
+            'notification_settings' => "ALTER TABLE school_settings ADD COLUMN notification_settings TEXT NULL AFTER timezone",
+            'email_settings' => "ALTER TABLE school_settings ADD COLUMN email_settings TEXT NULL AFTER notification_settings",
+            'security_settings' => "ALTER TABLE school_settings ADD COLUMN security_settings TEXT NULL AFTER email_settings",
+            'maintenance_mode' => "ALTER TABLE school_settings ADD COLUMN maintenance_mode TINYINT(1) NOT NULL DEFAULT 0 AFTER security_settings",
+            'academic_year_end_month' => "ALTER TABLE school_settings ADD COLUMN academic_year_end_month INT NULL DEFAULT 6 AFTER academic_year_start_month",
+        ];
+
+        foreach ($columns as $column => $sql) {
+            if (!$this->columnExists($column)) {
+                $this->db->exec($sql);
+            }
         }
     }
 
@@ -271,14 +423,11 @@ class SettingsController
             exec($command, $output, $returnVar);
 
             if ($returnVar === 0 && file_exists($filepath)) {
-                $response->getBody()->write(json_encode([
-                    'success' => true,
-                    'message' => 'Backup created successfully',
-                    'filename' => $filename,
-                    'size' => filesize($filepath),
-                    'path' => $filepath
-                ]));
-                return $response->withHeader('Content-Type', 'application/json');
+                $stream = new Stream(fopen($filepath, 'rb'));
+                return $response
+                    ->withBody($stream)
+                    ->withHeader('Content-Type', 'application/octet-stream')
+                    ->withHeader('Content-Disposition', 'attachment; filename="' . $filename . '"');
             } else {
                 $response->getBody()->write(json_encode([
                     'success' => false,

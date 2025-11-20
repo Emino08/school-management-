@@ -41,6 +41,7 @@ import {
   Download,
   RefreshCw,
   GraduationCap,
+  ArrowLeft,
 } from "lucide-react";
 
 const ClassManagement = () => {
@@ -311,14 +312,25 @@ const ClassManagement = () => {
   return (
     <div className="p-6 space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Class Management</h1>
-          <p className="text-gray-500 mt-1">
-            Manage classes, students, and class masters
-          </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-fit gap-2 text-gray-600"
+            onClick={() => navigate(-1)}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Class Management</h1>
+            <p className="text-gray-500 mt-1">
+              Manage classes, students, and class masters
+            </p>
+          </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setShowPlacementModal(true)} className="gap-2">
             Placement Settings
           </Button>
