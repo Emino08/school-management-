@@ -81,12 +81,38 @@ axios.interceptors.response.use(
     (error) => {
         if (error.response && error.response.status === 401) {
             // Token expired or invalid
-            const message = error.response.data?.message;
-            const skipLogout = error.config && error.config.__skipAuthRedirect;
-            if (!skipLogout && message && (message.includes('expired') || message.includes('Invalid'))) {
-                // Clear user data and redirect to login
+            const message = error.response.data?.message || '';
+            const errorCode = error.response.data?.error || '';
+            const url = error.config?.url || '';
+            const isAuthRoute = url.includes('/login') || url.includes('/register');
+            const skipLogout = error.config && (error.config.__skipAuthRedirect || isAuthRoute);
+            
+            // Only logout and redirect if it's a token issue and not an auth route
+            if (!skipLogout && (message.includes('expired') || message.includes('Invalid') || message.includes('signature') || errorCode === 'TOKEN_EXPIRED' || errorCode === 'INVALID_TOKEN' || errorCode === 'INVALID_SIGNATURE')) {
+                // Clear user data
                 localStorage.removeItem('user');
-                window.location.href = '/';
+                localStorage.removeItem('token');
+                
+                // Clear Redux persist if it exists
+                const keys = Object.keys(localStorage);
+                keys.forEach(key => {
+                    if (key.includes('persist') || key.includes('redux')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+                
+                // Show alert with helpful message
+                const fixUrl = 'http://localhost:8080/fix-auth.html';
+                const shouldRedirectToFix = confirm(
+                    'Your session has expired or is invalid.\n\n' +
+                    'Click OK to go to the authentication fix page, or Cancel to stay on the login page.'
+                );
+                
+                if (shouldRedirectToFix) {
+                    window.location.href = fixUrl;
+                } else {
+                    window.location.href = '/';
+                }
             }
         }
         return Promise.reject(error);

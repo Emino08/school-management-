@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Authentication - School Management System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+            font-size: 28px;
+        }
+        .step {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ffc107;
+            font-weight: bold;
+        }
+        .result {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+        .result.show {
+            display: block;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .login-form {
+            display: none;
+        }
+        .login-form.show {
+            display: block;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin: 8px 0;
+            box-sizing: border-box;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px 0;
+            font-weight: 500;
+            color: #555;
+        }
+        .info {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            color: #004085;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Fix Authentication Issue</h1>
+        
+        <div class="info">
+            <strong>Issue:</strong> Your authentication token is invalid or expired.<br>
+            <strong>Solution:</strong> Clear your session and log in again.
+        </div>
+
+        <div class="step">
+            <h3>Step 1: Clear Old Session</h3>
+            <p>Click the button below to clear your old authentication data:</p>
+            <button onclick="clearSession()" id="clearBtn">Clear Session Data</button>
+            <div id="clearResult" class="result"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Login Again</h3>
+            <p>Enter your admin credentials to get a fresh authentication token:</p>
+            <div class="login-form" id="loginForm">
+                <label>Email:</label>
+                <input type="email" id="email" placeholder="your@email.com" />
+                
+                <label>Password:</label>
+                <input type="password" id="password" placeholder="Your password" />
+                
+                <button onclick="doLogin()" id="loginBtn">Login Now</button>
+            </div>
+            <div id="loginResult" class="result"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Test Access</h3>
+            <p>After logging in, test if you can access protected endpoints:</p>
+            <button onclick="testAccess()" id="testBtn" disabled>Test Settings Access</button>
+            <div id="testResult" class="result"></div>
+        </div>
+
+        <div class="info">
+            <strong>Admin Emails Available:</strong><br>
+            • koromaemmanuel66@gmail.com<br>
+            • emk32770@gmail.com<br>
+            • ek32770@gmail.com
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        let currentToken = null;
+
+        function showResult(elementId, message, isSuccess) {
+            const el = document.getElementById(elementId);
+            el.className = 'result show ' + (isSuccess ? 'success' : 'error');
+            el.innerHTML = message;
+        }
+
+        function clearSession() {
+            try {
+                // Clear all auth-related data
+                localStorage.removeItem('user');
+                localStorage.removeItem('token');
+                sessionStorage.clear();
+                
+                // Also try to clear Redux persist
+                const keys = Object.keys(localStorage);
+                keys.forEach(key => {
+                    if (key.includes('persist') || key.includes('redux')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+
+                showResult('clearResult', '✓ Session data cleared successfully! You can now login again.', true);
+                
+                // Enable login form
+                document.getElementById('loginForm').classList.add('show');
+                document.getElementById('clearBtn').disabled = true;
+                
+            } catch (error) {
+                showResult('clearResult', '✗ Error clearing session: ' + error.message, false);
+            }
+        }
+
+        async function doLogin() {
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+
+            if (!email || !password) {
+                showResult('loginResult', '✗ Please enter both email and password', false);
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging in...';
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.token) {
+                    currentToken = data.token;
+                    localStorage.setItem('user', JSON.stringify(data));
+                    
+                    showResult('loginResult', 
+                        `✓ Login successful!<br>
+                        <strong>Name:</strong> ${data.schoolName}<br>
+                        <strong>Role:</strong> ${data.role}<br>
+                        <strong>Token:</strong> ${data.token.substring(0, 30)}...`, 
+                        true
+                    );
+                    
+                    document.getElementById('testBtn').disabled = false;
+                    loginBtn.textContent = '✓ Logged In';
+                    document.getElementById('loginForm').classList.remove('show');
+                    
+                } else {
+                    showResult('loginResult', `✗ Login failed: ${data.message}`, false);
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Try Again';
+                }
+            } catch (error) {
+                showResult('loginResult', `✗ Error: ${error.message}`, false);
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Try Again';
+            }
+        }
+
+        async function testAccess() {
+            const testBtn = document.getElementById('testBtn');
+            testBtn.disabled = true;
+            testBtn.textContent = 'Testing...';
+
+            if (!currentToken) {
+                const userStr = localStorage.getItem('user');
+                if (userStr) {
+                    try {
+                        const user = JSON.parse(userStr);
+                        currentToken = user.token;
+                    } catch (e) {
+                        showResult('testResult', '✗ Could not get token. Please login again.', false);
+                        testBtn.disabled = false;
+                        testBtn.textContent = 'Test Settings Access';
+                        return;
+                    }
+                }
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/settings`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showResult('testResult', 
+                        `✓ SUCCESS! You can now access protected endpoints!<br>
+                        <pre>${JSON.stringify(data, null, 2).substring(0, 200)}...</pre>
+                        <br><strong>You can now return to the main application.</strong>`, 
+                        true
+                    );
+                    testBtn.textContent = '✓ Access Working';
+                    
+                    // Redirect to main app after 3 seconds
+                    setTimeout(() => {
+                        if (confirm('Authentication is working! Redirect to main application?')) {
+                            window.location.href = 'http://localhost:5173';
+                        }
+                    }, 2000);
+                    
+                } else {
+                    showResult('testResult', 
+                        `✗ Access failed: ${data.message}<br>
+                        Error Code: ${data.error || 'UNKNOWN'}<br>
+                        ${data.hint ? 'Hint: ' + data.hint : ''}<br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`, 
+                        false
+                    );
+                    testBtn.disabled = false;
+                    testBtn.textContent = 'Try Again';
+                }
+            } catch (error) {
+                showResult('testResult', `✗ Error: ${error.message}`, false);
+                testBtn.disabled = false;
+                testBtn.textContent = 'Try Again';
+            }
+        }
+
+        // Check if there's already a token on load
+        window.onload = function() {
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+                try {
+                    const user = JSON.parse(userStr);
+                    if (user.token) {
+                        document.getElementById('clearBtn').textContent = '⚠ Clear Old Session (Detected)';
+                        document.getElementById('clearBtn').style.background = '#ffc107';
+                    }
+                } catch (e) {}
+            }
+        };
+
+        // Allow Enter key to submit login
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && document.getElementById('loginForm').classList.contains('show')) {
+                doLogin();
+            }
+        });
+    </script>
+</body>
+</html>

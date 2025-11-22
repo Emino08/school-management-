@@ -24,10 +24,18 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
     experience_years: '',
     is_exam_officer: false,
     can_approve_results: false,
+    is_town_master: false,
+    // Medical specific
+    specialization: '',
+    license_number: '',
+    is_active: true,
     // Finance specific
     can_approve_payments: true,
     can_generate_reports: true,
-    can_manage_fees: true
+    can_manage_fees: true,
+    // Parent specific
+    relationship: 'mother',
+    notification_preference: 'both'
   });
 
   const [classes, setClasses] = useState([]);
@@ -36,8 +44,8 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
 
   useEffect(() => {
     if (user) {
-      setFormData({
-        ...formData,
+      setFormData((prev) => ({
+        ...prev,
         name: user.name || '',
         email: user.email || '',
         phone: user.phone || '',
@@ -49,13 +57,21 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
         parent_phone: user.parent_phone || '',
         class_id: user.class_id || '',
         qualification: user.qualification || '',
+        specialization: user.specialization || '',
+        license_number: user.license_number || '',
         experience_years: user.experience_years || '',
         is_exam_officer: user.is_exam_officer || false,
+        is_active: user.is_active !== undefined ? Boolean(user.is_active) : true,
         can_approve_results: user.can_approve_results || false,
+        is_town_master: user.is_town_master || false,
         can_approve_payments: user.can_approve_payments !== undefined ? user.can_approve_payments : true,
         can_generate_reports: user.can_generate_reports !== undefined ? user.can_generate_reports : true,
-        can_manage_fees: user.can_manage_fees !== undefined ? user.can_manage_fees : true
-      });
+        can_manage_fees: user.can_manage_fees !== undefined ? user.can_manage_fees : true,
+        relationship: user.relationship || 'mother',
+        notification_preference: user.notification_preference || 'both',
+        password: '',
+        confirmPassword: ''
+      }));
     }
   }, [user]);
 
@@ -160,6 +176,8 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
       case 'students': return 'student';
       case 'teachers': return 'teacher';
       case 'finance': return 'finance';
+      case 'medical': return 'medical';
+      case 'parents': return 'parent';
       case 'principals': return 'principal';
       default: return 'user';
     }
@@ -170,6 +188,8 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
       case 'students': return 'Student';
       case 'teachers': return 'Teacher';
       case 'finance': return 'Finance User';
+      case 'medical': return 'Medical Staff';
+      case 'parents': return 'Parent';
       case 'principals': return 'Principal';
       default: return 'User';
     }
@@ -461,7 +481,91 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
                         Can Approve Results
                       </span>
                     </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name="is_town_master"
+                        checked={formData.is_town_master}
+                        onChange={handleChange}
+                        className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Town Master
+                      </span>
+                    </label>
                   </div>
+                </div>
+              </>
+            )}
+
+            {/* Medical Staff Fields */}
+            {userType === 'medical' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Qualification
+                  </label>
+                  <input
+                    type="text"
+                    name="qualification"
+                    value={formData.qualification}
+                    onChange={handleChange}
+                    placeholder="e.g., RN, MBBS, EMT"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                      focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Specialization
+                  </label>
+                  <input
+                    type="text"
+                    name="specialization"
+                    value={formData.specialization}
+                    onChange={handleChange}
+                    placeholder="e.g., Pediatrics, First Aid"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                      focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    License/Registration No.
+                  </label>
+                  <input
+                    type="text"
+                    name="license_number"
+                    value={formData.license_number}
+                    onChange={handleChange}
+                    placeholder="Enter license number"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                      focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="is_active"
+                      checked={formData.is_active}
+                      onChange={handleChange}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Active account
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Deactivate to prevent the staff member from logging into the medical portal.
+                  </p>
                 </div>
               </>
             )}
@@ -513,6 +617,48 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
                   </label>
                 </div>
               </div>
+            )}
+
+            {/* Parent Specific Fields */}
+            {userType === 'parents' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Relationship
+                  </label>
+                  <select
+                    name="relationship"
+                    value={formData.relationship}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                      focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="mother">Mother</option>
+                    <option value="father">Father</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Notification Preference
+                  </label>
+                  <select
+                    name="notification_preference"
+                    value={formData.notification_preference}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                      focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="both">Email & SMS</option>
+                    <option value="email">Email only</option>
+                    <option value="sms">SMS only</option>
+                  </select>
+                </div>
+              </>
             )}
           </div>
 

@@ -11,6 +11,7 @@ use App\Models\ClassModel;
 use App\Utils\JWT;
 use App\Utils\Validator;
 use App\Utils\Cache;
+use App\Config\Database;
 
 class AdminController
 {
@@ -68,6 +69,23 @@ class AdminController
             // Get the created admin/account
             $adminAccount = $this->sanitizeAdminRecord($this->adminModel->findById($adminId));
 
+            // Send welcome email if notifications are enabled
+            try {
+                $settings = $this->getNotificationSettings();
+                if ($settings && $settings['email_enabled']) {
+                    $mailer = new \App\Utils\Mailer();
+                    $mailer->sendWelcomeEmail(
+                        $adminAccount['email'],
+                        $adminAccount['school_name'] ?? $adminAccount['contact_name'] ?? 'Admin',
+                        'Admin',
+                        null // No temp password for self-registration
+                    );
+                }
+            } catch (\Exception $e) {
+                error_log('Failed to send welcome email: ' . $e->getMessage());
+                // Don't fail registration if email fails
+            }
+
             // Generate JWT token
             $token = JWT::encode([
                 'id' => $adminAccount['id'],
@@ -75,7 +93,7 @@ class AdminController
                 'email' => $adminAccount['email'],
                 'admin_id' => $adminAccount['id'],
                 'account_id' => $adminAccount['id']
-            ], $_ENV['JWT_SECRET'], 'HS256');
+            ]);
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -161,7 +179,7 @@ class AdminController
             'email' => $accountRecord['email'],
             'admin_id' => $ownerAdmin['id'],
             'account_id' => $accountRecord['id']
-        ], $_ENV['JWT_SECRET'], 'HS256');
+        ]);
 
         $response->getBody()->write(json_encode([
             'success' => true,
@@ -825,5 +843,23 @@ class AdminController
             'isSuperAdmin' => $isAdmin,
             'canManagePrincipals' => $isAdmin
         ];
+    }
+
+    private function getNotificationSettings(): ?array
+    {
+        try {
+            $db = Database::getInstance()->getConnection();
+            $stmt = $db->query("SELECT notification_settings FROM school_settings LIMIT 1");
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            
+            if ($row && $row['notification_settings']) {
+                return json_decode($row['notification_settings'], true);
+            }
+            
+            // Return default: email enabled
+            return ['email_enabled' => true];
+        } catch (\Exception $e) {
+            return ['email_enabled' => true];
+        }
     }
 }

@@ -28,7 +28,8 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
   const { currentUser } = useSelector((state) => state.user);
   
   // Form fields matching AddTeacher pattern
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
@@ -44,6 +45,9 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
   // Exam Officer fields
   const [isExamOfficer, setIsExamOfficer] = useState(false);
   const [canApproveResults, setCanApproveResults] = useState(false);
+
+  // Town Master
+  const [isTownMaster, setIsTownMaster] = useState(false);
   
   // Subjects
   const [allSubjects, setAllSubjects] = useState([]);
@@ -72,7 +76,8 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
       }
       
       // Set form fields
-      setName(teacher.name || '');
+      setFirstName(teacher.first_name || teacher.name?.split(' ')[0] || '');
+      setLastName(teacher.last_name || teacher.name?.split(' ').slice(1).join(' ') || '');
       setEmail(teacher.email || '');
       setPhone(teacher.phone || '');
       setQualification(teacher.qualification || '');
@@ -85,6 +90,7 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
       setClassMasterOf(teacher.class_master_of?.toString() || '');
       setIsExamOfficer(Boolean(teacher.is_exam_officer));
       setCanApproveResults(Boolean(teacher.can_approve_results));
+      setIsTownMaster(Boolean(teacher.is_town_master));
       
       // Set subjects
       setSelectedSubjects(subjectIds);
@@ -152,7 +158,8 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
     setLoader(true);
 
     const updateData = {
-      name,
+      first_name: firstName,
+      last_name: lastName,
       phone,
       qualification,
       experience_years: experienceYears,
@@ -162,6 +169,7 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
       class_master_of: isClassMaster ? classMasterOf : null,
       is_exam_officer: isExamOfficer,
       can_approve_results: canApproveResults,
+      is_town_master: isTownMaster,
     };
 
     // Only include password if it's been changed
@@ -198,7 +206,8 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
 
   const handleClose = () => {
     // Reset all form fields
-    setName('');
+    setFirstName('');
+    setLastName('');
     setEmail('');
     setPassword('');
     setPhone('');
@@ -209,6 +218,7 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
     setClassMasterOf('');
     setIsExamOfficer(false);
     setCanApproveResults(false);
+    setIsTownMaster(false);
     setSelectedSubjects([]);
     setLoader(false);
     
@@ -242,16 +252,30 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
 
         <form onSubmit={submitHandler} className="space-y-6 mt-4">
           {/* Basic Information */}
-          <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
-            <Input
-              id="name"
-              type="text"
-              placeholder="Enter teacher's name..."
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">First Name *</Label>
+              <Input
+                id="firstName"
+                type="text"
+                placeholder="Enter first name..."
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Last Name *</Label>
+              <Input
+                id="lastName"
+                type="text"
+                placeholder="Enter last name..."
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                required
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -421,6 +445,24 @@ const EditTeacherModal = ({ open, onOpenChange, teacher, onSuccess }) => {
 
             <p className="text-xs text-blue-700">
               Exam officers review and approve grades uploaded by teachers.
+            </p>
+          </div>
+
+          {/* Town Master Options */}
+          <div className="space-y-3 p-4 bg-indigo-50 rounded-md border border-indigo-200">
+            <h4 className="font-semibold text-sm text-indigo-900">Town Master Designation (Optional)</h4>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="isTownMaster"
+                checked={isTownMaster}
+                onCheckedChange={(value) => setIsTownMaster(Boolean(value))}
+              />
+              <Label htmlFor="isTownMaster" className="cursor-pointer text-sm">
+                Mark as Town Master
+              </Label>
+            </div>
+            <p className="text-xs text-indigo-700">
+              Town masters can add and manage students in their towns/blocks.
             </p>
           </div>
 

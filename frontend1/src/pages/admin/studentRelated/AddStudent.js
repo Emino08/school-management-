@@ -27,7 +27,8 @@ const AddStudent = ({ situation }) => {
   const { status, currentUser, response, error } = userState;
   const { sclassesList } = useSelector((state) => state.sclass);
 
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [rollNum, setRollNum] = useState("");
   const [password, setPassword] = useState("");
   const [className, setClassName] = useState("");
@@ -62,22 +63,26 @@ const AddStudent = ({ situation }) => {
     }
   };
 
-  const fields = {
-    name,
-    rollNum,
-    password,
-    sclassName,
-    adminID,
-    role,
-    attendance,
-  };
-
   const submitHandler = (event) => {
     event.preventDefault();
     if (sclassName === "") {
       toast.error("Please select a classname");
+    } else if (!firstName.trim() || !lastName.trim()) {
+      toast.error("Please provide both first name and surname");
     } else {
       setLoader(true);
+      const fullName = `${firstName} ${lastName}`.trim();
+      const fields = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        name: fullName,
+        rollNum,
+        password,
+        sclassName,
+        adminID,
+        role,
+        attendance,
+      };
       dispatch(registerUser(fields, role));
     }
   };
@@ -104,17 +109,31 @@ const AddStudent = ({ situation }) => {
           </CardHeader>
           <CardContent>
             <form onSubmit={submitHandler} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Enter student's name..."
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  autoComplete="name"
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="Enter student's first name..."
+                    value={firstName}
+                    onChange={(event) => setFirstName(event.target.value)}
+                    autoComplete="given-name"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Surname</Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Enter student's surname..."
+                    value={lastName}
+                    onChange={(event) => setLastName(event.target.value)}
+                    autoComplete="family-name"
+                    required
+                  />
+                </div>
               </div>
 
               {situation === "Student" && (

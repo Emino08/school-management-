@@ -678,7 +678,7 @@ const EnhancedFeesManagement = () => {
                             ) : (
                               feeStructures.map((fee) => (
                                 <SelectItem key={fee.id} value={fee.id.toString()}>
-                                  {fee.fee_name} - ${parseFloat(fee.amount).toLocaleString()}
+                                  {fee.fee_name} - SLE {parseFloat(fee.amount).toLocaleString()}
                                 </SelectItem>
                               ))
                             )}
@@ -863,7 +863,7 @@ const EnhancedFeesManagement = () => {
                                 <Badge variant="outline">{formatTermDisplay(payment.term)}</Badge>
                               </TableCell>
                               <TableCell className="text-right font-semibold text-green-600">
-                                ${parseFloat(payment.amount).toLocaleString()}
+                                SLE {parseFloat(payment.amount).toLocaleString()}
                               </TableCell>
                               <TableCell className="capitalize">{payment.payment_method?.replace('_', ' ')}</TableCell>
                               <TableCell className="text-sm text-gray-600">{payment.reference_number || "—"}</TableCell>
@@ -921,7 +921,7 @@ const EnhancedFeesManagement = () => {
                                     <div className="space-y-1">
                                       {getStatusBadge(term1Status.status)}
                                       <p className="text-xs text-gray-600">
-                                        ${term1Status.paid.toLocaleString()} / ${term1Status.required.toLocaleString()}
+                                        SLE {term1Status.paid.toLocaleString()} / SLE {term1Status.required.toLocaleString()}
                                       </p>
                                     </div>
                                   </TableCell>
@@ -929,7 +929,7 @@ const EnhancedFeesManagement = () => {
                                     <div className="space-y-1">
                                       {getStatusBadge(term2Status.status)}
                                       <p className="text-xs text-gray-600">
-                                        ${term2Status.paid.toLocaleString()} / ${term2Status.required.toLocaleString()}
+                                        SLE {term2Status.paid.toLocaleString()} / SLE {term2Status.required.toLocaleString()}
                                       </p>
                                     </div>
                                   </TableCell>
@@ -938,13 +938,13 @@ const EnhancedFeesManagement = () => {
                                       <div className="space-y-1">
                                         {getStatusBadge(term3Status.status)}
                                         <p className="text-xs text-gray-600">
-                                          ${term3Status.paid.toLocaleString()} / ${term3Status.required.toLocaleString()}
+                                          SLE {term3Status.paid.toLocaleString()} / SLE {term3Status.required.toLocaleString()}
                                         </p>
                                       </div>
                                     </TableCell>
                                   )}
                                   <TableCell className="text-right font-semibold text-green-600">
-                                    ${totalPaid.toLocaleString()}
+                                    SLE {totalPaid.toLocaleString()}
                                   </TableCell>
                                 </TableRow>
                               );

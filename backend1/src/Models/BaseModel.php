@@ -94,16 +94,27 @@ abstract class BaseModel
 
     public function update($id, $data)
     {
+        if (empty($data)) {
+            return true;
+        }
+
         $fields = [];
-        foreach (array_keys($data) as $field) {
-            $fields[] = "$field = :$field";
+        $params = [];
+        
+        foreach ($data as $field => $value) {
+            $fields[] = "`$field` = :$field";
+            $params[":$field"] = $value;
+        }
+
+        if (empty($fields)) {
+            return true;
         }
 
         $sql = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE id = :id";
         $stmt = $this->db->prepare($sql);
 
-        foreach ($data as $key => $value) {
-            $stmt->bindValue(":$key", $value);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
         }
         $stmt->bindValue(':id', $id);
 

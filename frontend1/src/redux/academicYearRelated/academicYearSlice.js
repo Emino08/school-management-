@@ -78,8 +78,22 @@ const academicyearSlice = createSlice({
     academicYearDetailsSuccess: (state, action) => {
         state.academicYearLoading = false;
         state.academicYearError = null;
-        state.academicYearData = action.payload;
+        const years = Array.isArray(action.payload) ? action.payload : [];
+        state.academicYearData = years;
         state.academicYearStatus = "succeeded";
+
+        // Persist the currently active academic year (if any) for consumers that read from localStorage
+        try {
+            const currentYear =
+                years.find((item) => item?.is_current === true || item?.is_current === 1) || null;
+            if (currentYear) {
+                localStorage.setItem('currentAcademicYear', JSON.stringify(currentYear));
+            } else {
+                localStorage.removeItem('currentAcademicYear');
+            }
+        } catch (e) {
+            console.error('Failed to persist current academic year', e);
+        }
     },
     academicYearFailed: (state, action) => {
       state.academicYearLoading = false;
@@ -104,6 +118,11 @@ const academicyearSlice = createSlice({
     // Add an action to clear the academic year data.
     clearAcademicYearData: (state) => {
       state.academicYearData = [];
+      try {
+        localStorage.removeItem('currentAcademicYear');
+      } catch (e) {
+        console.error('Failed to clear current academic year from storage', e);
+      }
     },
     clearStatusMessage: (state) => {
         state.academicYearMessage = "";

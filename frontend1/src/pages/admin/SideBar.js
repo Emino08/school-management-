@@ -25,12 +25,15 @@ import {
   FiCreditCard,
   FiChevronDown,
   FiChevronRight,
+  FiMapPin,
 } from "react-icons/fi";
 import { MdVpnKey } from "react-icons/md";
 import BoSchoolLogo from "@/assets/Bo-School-logo.png";
+import axios from "axios";
 
 const SideBar = () => {
   const location = useLocation();
+  const [notificationCount, setNotificationCount] = React.useState(0);
   const [openSections, setOpenSections] = React.useState({
     academic: true,
     results: false,
@@ -38,6 +41,25 @@ const SideBar = () => {
     communication: false,
     system: false,
   });
+
+  React.useEffect(() => {
+    fetchNotificationCount();
+    // Poll every 30 seconds for new notifications
+    const interval = setInterval(fetchNotificationCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchNotificationCount = async () => {
+    try {
+      const response = await axios.get('/notifications/unread-count');
+      if (response.data.success) {
+        setNotificationCount(response.data.unread_count || 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch notification count:', error);
+      setNotificationCount(0);
+    }
+  };
 
   const toggleSection = (section) => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -96,7 +118,7 @@ const SideBar = () => {
         <NavItem to="/" icon={FiHome} startsWith={false}>
           Home
         </NavItem>
-        <NavItem to="/Admin/notifications" icon={FiBell} startsWith={true} badge="3">
+        <NavItem to="/Admin/notifications" icon={FiBell} startsWith={true} badge={notificationCount > 0 ? notificationCount : null}>
           Notifications
         </NavItem>
         <NavItem to="/Admin/users" icon={FiUsers} startsWith={true}>
@@ -132,6 +154,9 @@ const SideBar = () => {
               </NavItem>
               <NavItem to="/Admin/students-management" icon={FiUsers} startsWith={true}>
                 Students
+              </NavItem>
+              <NavItem to="/Admin/town-master" icon={FiMapPin} startsWith={true}>
+                Town Master
               </NavItem>
               <NavItem to="/Admin/attendance" icon={FiClipboard} startsWith={true}>
                 Attendance
@@ -186,7 +211,7 @@ const SideBar = () => {
                 Payments & Finance
               </NavItem>
               <NavItem to="/Admin/reports" icon={FiBarChart2} startsWith={true}>
-                Financial Reports
+                Reports
               </NavItem>
             </div>
           )}
@@ -226,7 +251,7 @@ const SideBar = () => {
                 Users
               </NavItem>
               <NavItem to="/Admin/reports" icon={FiBarChart2} startsWith={true}>
-                Reports & Analytics
+                Reports
               </NavItem>
               <NavItem to="/Admin/settings" icon={FiSettings} startsWith={true}>
                 System Settings

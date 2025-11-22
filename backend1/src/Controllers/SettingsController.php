@@ -228,16 +228,16 @@ class SettingsController
         $payload = json_encode(array_merge($defaults, $data));
         $id = $this->ensureSettingsRow();
 
-        $stmt = $this->db->prepare("
-            UPDATE school_settings
-               SET {$column} = :payload,
-                   updated_at = CURRENT_TIMESTAMP
-             WHERE id = :id
-        ");
-        $stmt->execute([
-            ':payload' => $payload,
-            ':id' => $id,
-        ]);
+        // Validate column name to prevent SQL injection
+        $allowedColumns = ['notification_settings', 'email_settings', 'security_settings'];
+        if (!in_array($column, $allowedColumns)) {
+            throw new \InvalidArgumentException("Invalid column name: {$column}");
+        }
+
+        // Use string interpolation but safe because we validated column name above
+        $sql = "UPDATE school_settings SET {$column} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([$payload, $id]);
     }
 
     private function saveSystemSettings(array $data): void
@@ -264,9 +264,21 @@ class SettingsController
 
     private function columnExists(string $column): bool
     {
-        $stmt = $this->db->prepare("SHOW COLUMNS FROM school_settings LIKE :column");
-        $stmt->execute([':column' => $column]);
-        return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+        try {
+            $stmt = $this->db->prepare("
+                SELECT COUNT(*) as cnt
+                FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'school_settings' 
+                  AND COLUMN_NAME = ?
+            ");
+            $stmt->execute([$column]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['cnt'] ?? 0) > 0;
+        } catch (\PDOException $e) {
+            error_log("Column check error: " . $e->getMessage());
+            return false;
+        }
     }
 
     private function ensureExtendedColumns(): void
@@ -324,13 +336,14 @@ class SettingsController
                 $logoUrl = '/uploads/' . $filename;
 
                 // Update settings with new logo URL
+                $id = $this->ensureSettingsRow();
                 $stmt = $this->db->prepare("
                     UPDATE school_settings
                     SET logo_url = :logo_url,
                         updated_at = CURRENT_TIMESTAMP
-                    LIMIT 1
+                    WHERE id = :id
                 ");
-                $stmt->execute([':logo_url' => $logoUrl]);
+                $stmt->execute([':logo_url' => $logoUrl, ':id' => $id]);
 
                 return [
                     'success' => true,
@@ -372,6 +385,70 @@ class SettingsController
         $result = $this->update($data);
         $response->getBody()->write(json_encode($result));
         return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
+     * Test email configuration
+     */
+    public function testEmail(Request $request, Response $response)
+    {
+        try {
+            $data = json_decode($request->getBody()->getContents(), true);
+            $testEmail = $data['email'] ?? null;
+
+            if (!$testEmail || !filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Valid email address is required'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+
+            $mailer = new \App\Utils\Mailer();
+            
+            // Test SMTP connection first
+            $connectionTest = $mailer->testConnection();
+            if (!$connectionTest['success']) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'SMTP Connection Failed: ' . $connectionTest['message']
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            }
+
+            // Send test email
+            $subject = 'Test Email from School Management System';
+            $body = '
+                <h2>Email Configuration Test</h2>
+                <p>This is a test email to verify your email configuration is working correctly.</p>
+                <p>If you received this email, your SMTP settings are configured properly!</p>
+                <p>Sent at: ' . date('Y-m-d H:i:s') . '</p>
+            ';
+
+            $sent = $mailer->send($testEmail, $subject, $body);
+
+            if ($sent) {
+                $response->getBody()->write(json_encode([
+                    'success' => true,
+                    'message' => 'Test email sent successfully to ' . $testEmail
+                ]));
+            } else {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Failed to send test email'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+            }
+
+            return $response->withHeader('Content-Type', 'application/json');
+
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
     }
 
     /**

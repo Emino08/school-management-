@@ -8,6 +8,8 @@ use App\Models\Admin;
 use App\Models\FinanceUser;
 use App\Models\ExamOfficer;
 use App\Models\AcademicYear;
+use App\Models\MedicalStaff;
+use App\Models\ParentUser;
 use App\Utils\Validator;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -20,6 +22,8 @@ class UserManagementController
     private $financeUserModel;
     private $examOfficerModel;
     private $academicYearModel;
+    private $medicalStaffModel;
+    private $parentModel;
 
     public function __construct()
     {
@@ -29,6 +33,8 @@ class UserManagementController
         $this->financeUserModel = new FinanceUser();
         $this->examOfficerModel = new ExamOfficer();
         $this->academicYearModel = new AcademicYear();
+        $this->medicalStaffModel = new MedicalStaff();
+        $this->parentModel = new ParentUser();
     }
 
     /**
@@ -99,6 +105,31 @@ class UserManagementController
                     ];
                     break;
 
+                case 'medical':
+                    $staff = $this->medicalStaffModel->getAllByAdmin($adminId) ?: [];
+                    if ($search !== '') {
+                        $staff = array_values(array_filter($staff, function ($member) use ($search) {
+                            $hay = strtolower(($member['name'] ?? '') . ' ' . ($member['email'] ?? '') . ' ' . ($member['phone'] ?? '') . ' ' . ($member['license_number'] ?? ''));
+                            return strpos($hay, strtolower($search)) !== false;
+                        }));
+                    }
+                    if ($status !== null) {
+                        $active = in_array($status, ['1', 1, 'active'], true);
+                        $staff = array_values(array_filter($staff, function ($member) use ($active) {
+                            return (bool)$member['is_active'] === $active;
+                        }));
+                    }
+                    $total = count($staff);
+                    $pagedStaff = array_slice($staff, $offset, $limit);
+                    $result = [
+                        'users' => $pagedStaff,
+                        'total' => $total,
+                        'page' => $page,
+                        'limit' => $limit,
+                        'type' => 'medical'
+                    ];
+                    break;
+
                 case 'finance':
                     $filters = [
                         'search' => $search,
@@ -116,6 +147,26 @@ class UserManagementController
                         'page' => $page,
                         'limit' => $limit,
                         'type' => 'finance'
+                    ];
+                    break;
+
+                case 'parent':
+                    $filters = [
+                        'search' => $search,
+                        'limit' => $limit,
+                        'offset' => $offset
+                    ];
+                    if ($status !== null) {
+                        $filters['is_verified'] = in_array($status, ['1', 1, 'active', 'verified'], true) ? 1 : 0;
+                    }
+                    $parents = $this->parentModel->getByAdmin($adminId, $filters) ?: [];
+                    $total = $this->parentModel->countByAdmin($adminId, $filters);
+                    $result = [
+                        'users' => $parents,
+                        'total' => (int)$total,
+                        'page' => $page,
+                        'limit' => $limit,
+                        'type' => 'parent'
                     ];
                     break;
 
@@ -155,6 +206,14 @@ class UserManagementController
                         'finance' => [
                             'users' => $financeUsers,
                             'total' => (int)$this->financeUserModel->getCountByAdmin($adminId, [])
+                        ],
+                        'medical' => [
+                            'users' => array_slice($this->medicalStaffModel->getAllByAdmin($adminId) ?: [], 0, 5),
+                            'total' => $this->medicalStaffModel->count(['admin_id' => $adminId])
+                        ],
+                        'parents' => [
+                            'users' => array_slice($this->parentModel->getByAdmin($adminId, ['limit' => 5]) ?: [], 0, 5),
+                            'total' => $this->parentModel->countByAdmin($adminId, [])
                         ],
                         'principals' => [
                             'users' => array_slice(array_map([$this, 'formatPrincipalRecord'], $principals), 0, 5),
@@ -228,8 +287,8 @@ class UserManagementController
                         'address' => $body['address'] ?? null,
                         'phone' => $body['phone'] ?? null,
                         'parent_name' => $body['parent_name'] ?? null,
-                        'parent_phone' => $body['parent_phone'] ?? null,
-                        'class_id' => $body['class_id'] ?? null
+                        'parent_phone' => $body['parent_phone'] ?? null
+                        // Note: class_id removed as it doesn't exist in students table
                     ];
 
                     $newId = $this->studentModel->createStudent($studentData);
@@ -296,6 +355,41 @@ class UserManagementController
 
                     $result = $this->financeUserModel->createFinanceUser($financeData);
                     break;
+
+                case 'medical':
+                    if (empty($email)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email is required for medical staff']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    if ($this->medicalStaffModel->findByEmail($email)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $staffData = [
+                        'admin_id' => $adminId,
+                        'name' => $name,
+                        'email' => $email,
+                        'password' => $password,
+                        'phone' => $body['phone'] ?? null,
+                        'qualification' => $body['qualification'] ?? null,
+                        'specialization' => $body['specialization'] ?? null,
+                        'license_number' => $body['license_number'] ?? null,
+                        'is_active' => $body['is_active'] ?? 1
+                    ];
+
+                    $newId = $this->medicalStaffModel->createStaff($staffData);
+                    $result = ['id' => $newId] + $staffData;
+                    unset($result['password']);
+                    break;
+
+                case 'parent':
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => 'Parents create their own accounts via the Parent Portal'
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
 
                 case 'principal':
                     if (!$this->isSuperAdmin($request, $user)) {
@@ -376,7 +470,35 @@ class UserManagementController
 
             switch ($userType) {
                 case 'student':
-                    $result = $this->studentModel->update($id, $body);
+                    // Only include valid student fields
+                    $allowedStudentFields = [
+                        'name', 'first_name', 'last_name', 'email', 'password',
+                        'id_number', 'roll_number', 'admission_no', 'date_of_birth',
+                        'gender', 'address', 'phone', 'parent_name', 'parent_phone',
+                        'house_id', 'house_block_id', 'is_registered', 
+                        'suspension_status', 'suspension_reason', 'suspension_start_date', 
+                        'suspension_end_date', 'has_medical_condition', 'blood_group',
+                        'allergies', 'emergency_contact'
+                    ];
+                    
+                    $studentData = [];
+                    foreach ($allowedStudentFields as $field) {
+                        if (array_key_exists($field, $body)) {
+                            $studentData[$field] = $body[$field];
+                        }
+                    }
+                    
+                    // Hash password if provided
+                    if (!empty($studentData['password'])) {
+                        $studentData['password'] = password_hash($studentData['password'], PASSWORD_BCRYPT);
+                    }
+                    
+                    if (empty($studentData)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'No valid fields to update']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+                    
+                    $result = $this->studentModel->update($id, $studentData);
                     break;
 
                 case 'teacher':
@@ -397,6 +519,68 @@ class UserManagementController
 
                 case 'finance':
                     $result = $this->financeUserModel->updateFinanceUser($id, $adminId, $body);
+                    break;
+
+                case 'medical':
+                    $staff = $this->medicalStaffModel->findById($id);
+                    if (!$staff || (int)$staff['admin_id'] !== (int)$adminId) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Medical staff not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+
+                    if (!empty($body['email']) && $body['email'] !== $staff['email']) {
+                        if ($this->medicalStaffModel->findByEmail($body['email'])) {
+                            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                        }
+                    }
+
+                    $updateData = [];
+                    foreach (['name', 'email', 'phone', 'qualification', 'specialization', 'license_number', 'is_active'] as $field) {
+                        if (array_key_exists($field, $body)) {
+                            $updateData[$field] = $body[$field];
+                        }
+                    }
+                    if (!empty($body['password'])) {
+                        $updateData['password'] = password_hash($body['password'], PASSWORD_BCRYPT);
+                    }
+                    if (empty($updateData)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'No valid fields to update']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $result = $this->medicalStaffModel->update($id, $updateData);
+                    break;
+
+                case 'parent':
+                    $parent = $this->parentModel->findById($id);
+                    if (!$parent || (int)$parent['admin_id'] !== (int)$adminId) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Parent not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+
+                    if (!empty($body['email']) && $body['email'] !== $parent['email']) {
+                        if ($this->parentModel->findByEmail($body['email'])) {
+                            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                        }
+                    }
+
+                    $parentUpdate = [];
+                    foreach (['name', 'email', 'phone', 'address', 'relationship', 'notification_preference'] as $field) {
+                        if (array_key_exists($field, $body)) {
+                            $parentUpdate[$field] = $body[$field];
+                        }
+                    }
+                    if (!empty($body['password'])) {
+                        $parentUpdate['password'] = password_hash($body['password'], PASSWORD_BCRYPT);
+                    }
+                    if (empty($parentUpdate)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'No valid fields to update']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $result = $this->parentModel->update($id, $parentUpdate);
                     break;
 
                 case 'principal':
@@ -488,6 +672,24 @@ class UserManagementController
 
                 case 'finance':
                     $result = $this->financeUserModel->deleteFinanceUser($id, $adminId);
+                    break;
+
+                case 'medical':
+                    $staff = $this->medicalStaffModel->findById($id);
+                    if (!$staff || (int)$staff['admin_id'] !== (int)$adminId) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Medical staff not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+                    $result = $this->medicalStaffModel->delete($id);
+                    break;
+
+                case 'parent':
+                    $parent = $this->parentModel->findById($id);
+                    if (!$parent || (int)$parent['admin_id'] !== (int)$adminId) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Parent not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+                    $result = $this->parentModel->delete($id);
                     break;
 
                 case 'principal':
@@ -585,7 +787,9 @@ class UserManagementController
                 'exam_officers' => count($this->examOfficerModel->findByAdmin($adminId)),
                 'total_principals' => $this->adminModel->hasPrincipalSupport()
                     ? $this->adminModel->count(['parent_admin_id' => $adminId, 'role' => 'principal'])
-                    : 0
+                    : 0,
+                'total_medical_staff' => $this->medicalStaffModel->count(['admin_id' => $adminId]),
+                'total_parents' => $this->parentModel->countByAdmin($adminId, [])
             ];
 
             $response->getBody()->write(json_encode(['success' => true, 'stats' => $stats, 'message' => 'User statistics fetched successfully']));
@@ -626,6 +830,14 @@ class UserManagementController
                     'message' => 'Only super admins can perform this operation on principals'
                 ]));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+            }
+
+            if ($userType === 'parent' && $operation !== 'delete') {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Only deletion is supported for parent accounts from this panel'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
             }
 
             foreach ($userIds as $userId) {
@@ -738,6 +950,10 @@ class UserManagementController
                 return $this->teacherModel->softDelete($userId);
             case 'finance':
                 return $this->financeUserModel->deleteFinanceUser($userId, $adminId);
+            case 'medical':
+                return $this->medicalStaffModel->delete($userId);
+            case 'parent':
+                return $this->parentModel->delete($userId);
             case 'principal':
                 return $this->adminModel->deletePrincipal($userId, $adminId);
             default:
@@ -753,6 +969,8 @@ class UserManagementController
                 return $this->teacherModel->update($userId, ['is_deleted' => !$active]);
             case 'finance':
                 return $this->financeUserModel->updateFinanceUser($userId, $adminId, ['is_active' => $active]);
+            case 'medical':
+                return $this->medicalStaffModel->update($userId, ['is_active' => $active ? 1 : 0]);
             default:
                 return false;
         }

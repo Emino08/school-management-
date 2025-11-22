@@ -15,15 +15,20 @@ import {
 const StudentSideBar = () => {
   const location = useLocation();
 
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(path);
+  const isActive = (path) => {
+    if (!path) return false;
+    const normalized = path.endsWith('/') ? path.slice(0, -1) : path;
+    const current = location.pathname.endsWith('/') ? location.pathname.slice(0, -1) : location.pathname;
+    return current === normalized;
+  };
 
   return (
     <div className="flex flex-col h-full">
       <nav className="flex flex-col space-y-1 p-4">
         <Link
-          to="/"
+          to="/Student/dashboard"
           className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
-            isActive("/") || isActive("/Student/dashboard")
+            isActive("/Student/dashboard")
               ? "bg-primary text-primary-foreground"
               : "hover:bg-accent hover:text-accent-foreground"
           }`}

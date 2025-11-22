@@ -56,17 +56,47 @@ class ParentUser extends BaseModel
 
     public function verifyChildRelationship($parentId, $studentId, $dateOfBirth)
     {
-        $sql = "SELECT s.id, s.name, s.admin_id
+        echo "DEBUG: verifyChildRelationship START\n";
+        echo "  parentId: $parentId\n";
+        echo "  studentId: $studentId\n";
+        echo "  dateOfBirth: $dateOfBirth\n";
+        
+        // Check if studentId is numeric (database ID) or alphanumeric (id_number)
+        $sql = "SELECT s.id, s.name, s.first_name, s.last_name, s.admin_id
                 FROM students s
-                WHERE s.id = :student_id AND s.date_of_birth = :date_of_birth";
+                WHERE (s.id = :student_id OR s.id_number = :student_id_number) 
+                AND s.date_of_birth = :date_of_birth";
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([
-            ':student_id' => $studentId,
-            ':date_of_birth' => $dateOfBirth
-        ]);
-
-        return $stmt->fetch();
+        echo "DEBUG: SQL: $sql\n";
+        
+        try {
+            $stmt = $this->db->prepare($sql);
+            echo "DEBUG: Statement prepared\n";
+            
+            $params = [
+                ':student_id' => is_numeric($studentId) ? $studentId : 0,
+                ':student_id_number' => $studentId,
+                ':date_of_birth' => $dateOfBirth
+            ];
+            
+            echo "DEBUG: Params: " . json_encode($params) . "\n";
+            
+            $executed = $stmt->execute($params);
+            echo "DEBUG: Executed: " . ($executed ? 'TRUE' : 'FALSE') . "\n";
+            
+            $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+            echo "DEBUG: Fetched: " . ($result ? json_encode($result) : 'NULL/FALSE') . "\n";
+            echo "DEBUG: Type: " . gettype($result) . "\n";
+            
+            if ($result === false) {
+                echo "DEBUG: PDO Error: " . json_encode($stmt->errorInfo()) . "\n";
+            }
+            
+            return $result ? $result : false;
+        } catch (\Exception $e) {
+            echo "DEBUG: Exception: " . $e->getMessage() . "\n";
+            return false;
+        }
     }
 
     public function linkChild($parentId, $studentId, $adminId)
@@ -181,5 +211,65 @@ class ParentUser extends BaseModel
         }
 
         return $communication;
+    }
+
+    public function getByAdmin($adminId, array $filters = [])
+    {
+        $sql = "SELECT * FROM {$this->table} WHERE admin_id = :admin_id";
+        $params = [':admin_id' => $adminId];
+
+        if (!empty($filters['search'])) {
+            $sql .= " AND (LOWER(name) LIKE :search OR LOWER(email) LIKE :search OR phone LIKE :search)";
+            $params[':search'] = '%' . strtolower($filters['search']) . '%';
+        }
+
+        if (isset($filters['is_verified'])) {
+            $sql .= " AND is_verified = :is_verified";
+            $params[':is_verified'] = (int)$filters['is_verified'];
+        }
+
+        $sql .= " ORDER BY created_at DESC";
+
+        if (!empty($filters['limit'])) {
+            $sql .= " LIMIT :limit";
+            $params[':limit'] = (int)$filters['limit'];
+            if (!empty($filters['offset'])) {
+                $sql .= " OFFSET :offset";
+                $params[':offset'] = (int)$filters['offset'];
+            }
+        }
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
+            $stmt->bindValue($key, $value, $type);
+        }
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    public function countByAdmin($adminId, array $filters = []): int
+    {
+        $sql = "SELECT COUNT(*) as count FROM {$this->table} WHERE admin_id = :admin_id";
+        $params = [':admin_id' => $adminId];
+
+        if (!empty($filters['search'])) {
+            $sql .= " AND (LOWER(name) LIKE :search OR LOWER(email) LIKE :search OR phone LIKE :search)";
+            $params[':search'] = '%' . strtolower($filters['search']) . '%';
+        }
+
+        if (isset($filters['is_verified'])) {
+            $sql .= " AND is_verified = :is_verified";
+            $params[':is_verified'] = (int)$filters['is_verified'];
+        }
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $type = is_int($value) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
+            $stmt->bindValue($key, $value, $type);
+        }
+        $stmt->execute();
+        $result = $stmt->fetch();
+        return (int)($result['count'] ?? 0);
     }
 }

@@ -57,7 +57,10 @@ import {
   Download,
   Upload,
   RefreshCw,
+  BookOpen as BookIcon,
+  Users as UsersIcon,
 } from "lucide-react";
+import { MdMap } from "react-icons/md";
 import TeacherModal from "@/components/modals/TeacherModal";
 import EditTeacherModal from "@/components/modals/EditTeacherModal";
 
@@ -98,6 +101,15 @@ const TeacherManagement = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [teacherToEdit, setTeacherToEdit] = useState(null);
   const [viewTeacher, setViewTeacher] = useState(null);
+  
+  // New modals for classes and subjects
+  const [classesModalOpen, setClassesModalOpen] = useState(false);
+  const [subjectsModalOpen, setSubjectsModalOpen] = useState(false);
+  const [selectedTeacherClasses, setSelectedTeacherClasses] = useState([]);
+  const [selectedTeacherSubjects, setSelectedTeacherSubjects] = useState([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [selectedTeacherName, setSelectedTeacherName] = useState('');
 
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -142,12 +154,14 @@ const TeacherManagement = () => {
     const total = data.length;
     const classMasters = data.filter((t) => t.is_class_master).length;
     const examOfficers = data.filter((t) => t.is_exam_officer).length;
+    const townMasters = data.filter((t) => t.is_town_master).length;
     const activeRate = total > 0 ? Math.round((total / total) * 100) : 100;
 
     setAnalytics({
       total,
       classMasters,
       examOfficers,
+      townMasters,
       activeRate,
     });
   };
@@ -195,16 +209,25 @@ const TeacherManagement = () => {
         headers: { Authorization: `Bearer ${currentUser?.token}` },
         body: form,
       });
-      const data = await res.json();
-      if (data.success) {
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        data = null;
+      }
+
+      if (res.ok && data?.success) {
         toast.success('Teachers uploaded successfully');
         fetchTeachers();
       } else {
-        toast.error(data.message || 'Bulk upload failed');
+        const serverMessage = data?.message || data?.error;
+        const fallback = await res.text().catch(() => '');
+        const message = serverMessage || fallback || 'Bulk upload failed. Please check the CSV headers and data.';
+        toast.error(message);
       }
     } catch (e) {
       console.error('Bulk upload failed', e);
-      toast.error('Bulk upload failed');
+      toast.error(e?.message || 'Bulk upload failed');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -220,6 +243,25 @@ const TeacherManagement = () => {
       );
       if (res.data.success) {
         smallSuccess(make ? 'Exam officer assigned' : 'Exam officer revoked');
+        fetchTeachers();
+      } else {
+        toast.error(res.data.message || 'Action failed');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error(e.response?.data?.message || 'Action failed');
+    }
+  };
+
+  const toggleTownMaster = async (teacher, make) => {
+    try {
+      const res = await axios.put(
+        `${API_URL}/teachers/${teacher.id}`,
+        { is_town_master: make ? 1 : 0 },
+        { headers: { Authorization: `Bearer ${currentUser?.token}` } }
+      );
+      if (res.data.success) {
+        smallSuccess(make ? 'Town master assigned' : 'Town master revoked');
         fetchTeachers();
       } else {
         toast.error(res.data.message || 'Action failed');
@@ -286,6 +328,7 @@ const TeacherManagement = () => {
     if (viewTeacher.is_class_master) roles.push("Class Master");
     if (viewTeacher.is_exam_officer) roles.push("Exam Officer");
     if (viewTeacher.can_approve_results) roles.push("Can Approve Results");
+    if (viewTeacher.is_town_master) roles.push("Town Master");
     if (roles.length === 0) roles.push("Teacher");
 
     const classMasterOf = viewTeacher.class_master_of || viewTeacher.classMasterOf;
@@ -352,6 +395,10 @@ const TeacherManagement = () => {
             value: viewTeacher.is_class_master ? "Yes" : "No",
           },
           {
+            label: "Town Master",
+            value: viewTeacher.is_town_master ? "Yes" : "No",
+          },
+          {
             label: "Can Approve Results",
             value: viewTeacher.can_approve_results ? "Yes" : "No",
           },
@@ -367,6 +414,64 @@ const TeacherManagement = () => {
       infoGroups,
     };
   }, [viewTeacher, classes]);
+
+  const handleViewClasses = async (teacher) => {
+    const fullName = teacher.first_name && teacher.last_name 
+      ? `${teacher.first_name} ${teacher.last_name}`
+      : teacher.name || 'Teacher';
+    
+    setSelectedTeacherName(fullName);
+    setLoadingClasses(true);
+    setClassesModalOpen(true);
+    
+    try {
+      const response = await axios.get(`${API_URL}/teachers/${teacher.id}/classes`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` }
+      });
+      
+      if (response.data.success) {
+        setSelectedTeacherClasses(response.data.classes || []);
+      } else {
+        toast.error('Failed to load classes');
+        setSelectedTeacherClasses([]);
+      }
+    } catch (error) {
+      console.error('Error fetching classes:', error);
+      toast.error('Failed to load classes: ' + (error.response?.data?.message || error.message));
+      setSelectedTeacherClasses([]);
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
+
+  const handleViewSubjects = async (teacher) => {
+    const fullName = teacher.first_name && teacher.last_name 
+      ? `${teacher.first_name} ${teacher.last_name}`
+      : teacher.name || 'Teacher';
+    
+    setSelectedTeacherName(fullName);
+    setLoadingSubjects(true);
+    setSubjectsModalOpen(true);
+    
+    try {
+      const response = await axios.get(`${API_URL}/teachers/${teacher.id}/subjects`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` }
+      });
+      
+      if (response.data.success) {
+        setSelectedTeacherSubjects(response.data.subjects || []);
+      } else {
+        toast.error('Failed to load subjects');
+        setSelectedTeacherSubjects([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subjects:', error);
+      toast.error('Failed to load subjects: ' + (error.response?.data?.message || error.message));
+      setSelectedTeacherSubjects([]);
+    } finally {
+      setLoadingSubjects(false);
+    }
+  };
 
   const filterTeachers = () => {
     let filtered = [...teachers];
@@ -386,8 +491,10 @@ const TeacherManagement = () => {
         filtered = filtered.filter((t) => t.is_class_master);
       } else if (filterRole === "exam_officer") {
         filtered = filtered.filter((t) => t.is_exam_officer);
+      } else if (filterRole === "town_master") {
+        filtered = filtered.filter((t) => t.is_town_master);
       } else if (filterRole === "regular") {
-        filtered = filtered.filter((t) => !t.is_class_master && !t.is_exam_officer);
+        filtered = filtered.filter((t) => !t.is_class_master && !t.is_exam_officer && !t.is_town_master);
       }
     }
 
@@ -418,9 +525,10 @@ const TeacherManagement = () => {
   };
 
   const exportToCSV = () => {
-    const headers = ["Name", "Email", "Phone", "Role", "Class", "Subjects"];
+    const headers = ["First Name", "Last Name", "Email", "Phone", "Role", "Class", "Subjects"];
     const rows = filteredTeachers.map((t) => [
-      t.name,
+      t.first_name || t.name?.split(' ')[0] || "N/A",
+      t.last_name || t.name?.split(' ').slice(1).join(' ') || "N/A",
       t.email,
       t.phone || "N/A",
       getRoleLabel(t),
@@ -442,11 +550,14 @@ const TeacherManagement = () => {
     const roles = [];
     if (teacher.is_class_master) roles.push("Class Master");
     if (teacher.is_exam_officer) roles.push("Exam Officer");
+    if (teacher.is_town_master) roles.push("Town Master");
     if (roles.length === 0) roles.push("Teacher");
     return roles.join(" & ");
   };
 
   const getRoleBadgeColor = (teacher) => {
+    if (teacher.is_class_master && teacher.is_exam_officer && teacher.is_town_master) return "bg-purple-100 text-purple-800";
+    if (teacher.is_town_master) return "bg-indigo-100 text-indigo-800";
     if (teacher.is_class_master && teacher.is_exam_officer) return "bg-purple-100 text-purple-800";
     if (teacher.is_class_master) return "bg-green-100 text-green-800";
     if (teacher.is_exam_officer) return "bg-blue-100 text-blue-800";
@@ -580,6 +691,26 @@ const TeacherManagement = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
+              Town Masters
+            </CardTitle>
+            <MdMap className="w-5 h-5 text-indigo-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-900">
+              {analytics.townMasters}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {analytics.total > 0
+                ? Math.round((analytics.townMasters / analytics.total) * 100)
+                : 0}
+              % of total teachers
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
               Active Rate
             </CardTitle>
             <TrendingUp className="w-5 h-5 text-orange-600" />
@@ -615,12 +746,13 @@ const TeacherManagement = () => {
                 <SelectValue placeholder="Filter by role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Teachers</SelectItem>
-                <SelectItem value="class_master">Class Masters</SelectItem>
-                <SelectItem value="exam_officer">Exam Officers</SelectItem>
-                <SelectItem value="regular">Regular Teachers</SelectItem>
-              </SelectContent>
-            </Select>
+              <SelectItem value="all">All Teachers</SelectItem>
+              <SelectItem value="class_master">Class Masters</SelectItem>
+              <SelectItem value="exam_officer">Exam Officers</SelectItem>
+              <SelectItem value="town_master">Town Masters</SelectItem>
+              <SelectItem value="regular">Regular Teachers</SelectItem>
+            </SelectContent>
+          </Select>
 
             {/* Action Buttons */}
             <Button variant="outline" onClick={fetchTeachers} className="gap-2">
@@ -663,56 +795,67 @@ const TeacherManagement = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
+                    <TableHead>First Name</TableHead>
+                    <TableHead>Last Name</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead>Class</TableHead>
+                    <TableHead>Classes</TableHead>
                     <TableHead>Subjects</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTeachers.map((teacher) => (
-                  <TableRow key={teacher.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{teacher.name}</div>
-                          <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTeachers.map((teacher) => {
+                    const firstName = teacher.first_name || teacher.name?.split(' ')[0] || 'N/A';
+                    const lastName = teacher.last_name || teacher.name?.split(' ').slice(1).join(' ') || 'N/A';
+                    
+                    return (
+                      <TableRow key={teacher.id}>
+                        <TableCell>
+                          <div className="font-medium">{firstName}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{lastName}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-gray-500 flex items-center gap-1">
                             <Mail className="w-3 h-3" />
                             {teacher.email}
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {teacher.phone ? (
-                          <div className="flex items-center gap-1 text-sm">
-                            <Phone className="w-3 h-3 text-gray-400" />
-                            {teacher.phone}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-sm">No phone</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getRoleBadgeColor(teacher)}>
-                          {getRoleLabel(teacher)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {teacher.class_name ? (
-                          <div className="flex items-center gap-1">
-                            <BookOpen className="w-3 h-3 text-gray-400" />
-                            <span className="text-sm">{teacher.class_name}</span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-sm">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">
-                          {teacher.subjects || <span className="text-gray-400">No subjects</span>}
-                        </span>
-                      </TableCell>
+                          {teacher.phone && (
+                            <div className="flex items-center gap-1 text-sm text-gray-500 mt-1">
+                              <Phone className="w-3 h-3" />
+                              {teacher.phone}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getRoleBadgeColor(teacher)}>
+                            {getRoleLabel(teacher)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewClasses(teacher)}
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2"
+                          >
+                            <UsersIcon className="w-4 h-4" />
+                            View Classes
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewSubjects(teacher)}
+                            className="text-green-600 hover:text-green-700 hover:bg-green-50 gap-2"
+                          >
+                            <BookIcon className="w-4 h-4" />
+                            View Subjects
+                          </Button>
+                        </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         {/* Role shortcuts */}
@@ -748,6 +891,15 @@ const TeacherManagement = () => {
                             Make Master
                           </Button>
                         )}
+                        {teacher.is_town_master ? (
+                          <Button variant="outline" size="sm" onClick={() => toggleTownMaster(teacher, false)}>
+                            Remove Town
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" onClick={() => toggleTownMaster(teacher, true)}>
+                            Make Town
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -776,7 +928,8 @@ const TeacherManagement = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );
+                })}
                 </TableBody>
               </Table>
             </div>
@@ -970,6 +1123,113 @@ const TeacherManagement = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Classes Modal */}
+      <Dialog open={classesModalOpen} onOpenChange={setClassesModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UsersIcon className="w-5 h-5 text-blue-600" />
+              Classes - {selectedTeacherName}
+            </DialogTitle>
+            <DialogDescription>
+              List of classes where this teacher is assigned
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingClasses ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : selectedTeacherClasses.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <UsersIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No classes assigned yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {selectedTeacherClasses.map((cls) => (
+                <div
+                  key={cls.id}
+                  className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-semibold text-gray-900">
+                        {cls.class_name} {cls.section && `- ${cls.section}`}
+                      </h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Grade Level: {cls.grade_level}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                        {cls.subject_count} {cls.subject_count === 1 ? 'Subject' : 'Subjects'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Subjects Modal */}
+      <Dialog open={subjectsModalOpen} onOpenChange={setSubjectsModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookIcon className="w-5 h-5 text-green-600" />
+              Subjects - {selectedTeacherName}
+            </DialogTitle>
+            <DialogDescription>
+              List of subjects this teacher is teaching
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingSubjects ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+            </div>
+          ) : selectedTeacherSubjects.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <BookIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No subjects assigned yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {selectedTeacherSubjects.map((subject) => (
+                <div
+                  key={subject.id}
+                  className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900">
+                        {subject.subject_name}
+                      </h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Class: {subject.class_name} {subject.section && `- ${subject.section}`}
+                      </p>
+                      {subject.subject_code && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Code: {subject.subject_code}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                        Active
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

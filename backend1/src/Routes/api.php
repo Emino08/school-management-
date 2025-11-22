@@ -30,6 +30,7 @@ use App\Controllers\ParentController;
 use App\Controllers\MedicalController;
 use App\Controllers\HouseController;
 use App\Controllers\SuspensionController;
+use App\Controllers\PasswordResetController;
 
 // Root welcome route
 $app->get('/', function ($request, $response) {
@@ -50,6 +51,59 @@ $app->get('/', function ($request, $response) {
     ];
     $response->getBody()->write(json_encode($data, JSON_PRETTY_PRINT));
     return $response->withHeader('Content-Type', 'application/json');
+});
+
+// Alias routes to handle double /api/api/ paths (temporary fix for frontend misconfiguration)
+$app->group('/api/api', function (RouteCollectorProxy $group) {
+    // Redirect notification requests to the correct endpoint
+    $group->get('/notifications', function ($request, $response) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $userId = $user->id ?? $user->account_id ?? null;
+        $userRole = ucfirst($user->role ?? 'Student');
+        
+        $result = $controller->getForUser($userId, $userRole);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    
+    $group->post('/notifications', function ($request, $response) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $data = $request->getParsedBody();
+        $data['sender_id'] = $user->id ?? $user->account_id;
+        $data['sender_role'] = ucfirst($user->role ?? 'Admin');
+        
+        $result = $controller->create($data);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    
+    $group->get('/notifications/unread-count', function ($request, $response) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $userId = $user->id ?? $user->account_id ?? null;
+        $userRole = ucfirst($user->role ?? 'Student');
+        
+        $result = $controller->getUnreadCount($userId, $userRole);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    
+    $group->post('/notifications/{id}/mark-read', function ($request, $response, $args) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $userId = $user->id ?? $user->account_id ?? null;
+        $userRole = ucfirst($user->role ?? 'Student');
+        
+        $result = $controller->markAsRead($args['id'], $userId, $userRole);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
 });
 
 $app->group('/api', function (RouteCollectorProxy $group) {
@@ -97,6 +151,82 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/admin/stats', [AdminController::class, 'getDashboardStats'])->add(new AuthMiddleware());
     $group->get('/admin/charts', [AdminController::class, 'getDashboardCharts'])->add(new AuthMiddleware());
     $group->delete('/admin/{id}', [AdminController::class, 'deleteAdmin'])->add(new AuthMiddleware());
+    
+    // Admin-prefixed academic year routes (alias)
+    $group->get('/admin/academic-years', [AcademicYearController::class, 'getAll'])->add(new AuthMiddleware());
+    $group->get('/admin/academic-years/current', [AcademicYearController::class, 'getCurrent'])->add(new AuthMiddleware());
+
+    // Password Reset routes (no auth required)
+    $group->post('/password/forgot', [\App\Controllers\PasswordResetController::class, 'requestReset']);
+    $group->get('/password/verify-token', [\App\Controllers\PasswordResetController::class, 'verifyToken']);
+    $group->post('/password/reset', [\App\Controllers\PasswordResetController::class, 'resetPassword']);
+    $group->post('/password/cleanup', [\App\Controllers\PasswordResetController::class, 'cleanupExpiredTokens'])->add(new AuthMiddleware());
+
+    // Test email configuration (admin only)
+    $group->post('/email/test', function ($request, $response) {
+        try {
+            $mailer = new \App\Utils\Mailer();
+            $result = $mailer->testConnection();
+            $response->getBody()->write(json_encode($result));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    })->add(new AuthMiddleware());
+
+    // Notification routes (for all authenticated users)
+    $group->get('/notifications', function ($request, $response) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $userId = $user->id ?? $user->account_id ?? null;
+        $userRole = ucfirst($user->role ?? 'Student');
+        
+        $result = $controller->getForUser($userId, $userRole);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    
+    $group->post('/notifications', function ($request, $response) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $data = $request->getParsedBody();
+        $data['sender_id'] = $user->id ?? $user->account_id;
+        $data['sender_role'] = ucfirst($user->role ?? 'Admin');
+        
+        $result = $controller->create($data);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    
+    $group->get('/notifications/unread-count', function ($request, $response) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $userId = $user->id ?? $user->account_id ?? null;
+        $userRole = ucfirst($user->role ?? 'Student');
+        
+        $result = $controller->getUnreadCount($userId, $userRole);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
+    
+    $group->post('/notifications/{id}/mark-read', function ($request, $response, $args) {
+        $user = $request->getAttribute('user');
+        $controller = new NotificationController();
+        
+        $userId = $user->id ?? $user->account_id ?? null;
+        $userRole = ucfirst($user->role ?? 'Student');
+        
+        $result = $controller->markAsRead($args['id'], $userId, $userRole);
+        $response->getBody()->write(json_encode($result));
+        return $response->withHeader('Content-Type', 'application/json');
+    })->add(new AuthMiddleware());
 
     // Student routes
     // IMPORTANT: Specific routes must come before parameterized routes
@@ -117,6 +247,8 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     // IMPORTANT: Specific routes must come before parameterized routes
     $group->post('/teachers/register', [TeacherController::class, 'register'])->add(new AuthMiddleware());
     $group->post('/teachers/login', [TeacherController::class, 'login']);
+    $group->post('/teachers/bulk-upload', [TeacherController::class, 'bulkUpload'])->add(new AuthMiddleware());
+    $group->get('/teachers/bulk-template', [TeacherController::class, 'bulkTemplate'])->add(new AuthMiddleware());
     $group->post('/teachers/assign-subject', [TeacherController::class, 'assignSubject'])->add(new AuthMiddleware());
     $group->get('/teachers', [TeacherController::class, 'getAllTeachers'])->add(new AuthMiddleware());
     $group->get('/teachers/deleted', [TeacherController::class, 'getDeletedTeachers'])->add(new AuthMiddleware());
@@ -125,6 +257,8 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/teachers/grade-change-requests', [TeacherController::class, 'getMyGradeChangeRequests'])->add(new AuthMiddleware());
     $group->get('/teachers/grade-change-stats', [TeacherController::class, 'getGradeChangeStats'])->add(new AuthMiddleware());
     $group->get('/teachers/dashboard-stats', [TeacherController::class, 'getDashboardStats'])->add(new AuthMiddleware());
+    $group->get('/teachers/{id}/classes', [TeacherController::class, 'getTeacherClasses'])->add(new AuthMiddleware());
+    $group->get('/teachers/{id}/submissions', [TeacherController::class, 'getSubmissions'])->add(new AuthMiddleware());
     $group->delete('/teachers/{teacherId}/subjects/{subjectId}', [TeacherController::class, 'removeSubjectAssignment'])->add(new AuthMiddleware());
     $group->get('/teachers/{id}/subjects', [TeacherController::class, 'getTeacherSubjects'])->add(new AuthMiddleware());
     $group->post('/teachers/{id}/restore', [TeacherController::class, 'restoreTeacher'])->add(new AuthMiddleware());
@@ -316,13 +450,11 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->put('/timetable/{id}', [TimetableController::class, 'updateEntry'])->add(new AuthMiddleware());
     $group->delete('/timetable/{id}', [TimetableController::class, 'deleteEntry'])->add(new AuthMiddleware());
 
-    // Legacy route aliases for frontend compatibility
+    // Legacy route aliases for frontend compatibility (capitalized paths)
     $group->get('/ComplainList/{id}', [ComplaintController::class, 'getAll'])->add(new AuthMiddleware());
     $group->get('/NoticeList/{id}', [NoticeController::class, 'getAll'])->add(new AuthMiddleware());
     $group->get('/SclassList/{id}', [ClassController::class, 'getAll'])->add(new AuthMiddleware());
-    $group->get('/Students/{id}', [StudentController::class, 'getStudent'])->add(new AuthMiddleware());
-    $group->get('/Teachers/{id}', [TeacherController::class, 'getTeacher'])->add(new AuthMiddleware());
-    $group->get('/Teachers', [TeacherController::class, 'getAllTeachers'])->add(new AuthMiddleware());
+    // Note: /Students/{id} and /Teachers routes removed to avoid conflicts with /students/{id} and /teachers routes
     $group->get('/Sclass/Students/{id}', [StudentController::class, 'getStudentsByClass'])->add(new AuthMiddleware());
 
     // Academic Year legacy routes
@@ -472,35 +604,6 @@ $app->group('/api', function (RouteCollectorProxy $group) {
         return $response->withHeader('Content-Type', 'application/json');
     })->add(new AuthMiddleware());
 
-    // ===== NOTIFICATION ROUTES =====
-    $group->post('/notifications', [NotificationController::class, 'createNotification'])->add(new AuthMiddleware());
-    $group->get('/notifications', [NotificationController::class, 'getAllNotifications'])->add(new AuthMiddleware());
-    $group->put('/notifications/{id}', [NotificationController::class, 'updateNotification'])->add(new AuthMiddleware());
-    $group->delete('/notifications/{id}', [NotificationController::class, 'deleteNotification'])->add(new AuthMiddleware());
-    // Use closures to adapt user context for methods that aren't PSR-7
-    $group->get('/notifications/user', function ($request, $response) {
-        $controller = new \App\Controllers\NotificationController();
-        $user = $request->getAttribute('user');
-        $result = $controller->getForUser($user->id, $user->role);
-        $response->getBody()->write(json_encode($result));
-        return $response->withHeader('Content-Type', 'application/json');
-    })->add(new AuthMiddleware());
-    $group->post('/notifications/{id}/read', function ($request, $response, $args) {
-        $controller = new \App\Controllers\NotificationController();
-        $user = $request->getAttribute('user');
-        $result = $controller->markAsRead($args['id'], $user->id, $user->role);
-        $response->getBody()->write(json_encode($result));
-        return $response->withHeader('Content-Type', 'application/json');
-    })->add(new AuthMiddleware());
-    $group->get('/notifications/unread-count', function ($request, $response) {
-        $controller = new \App\Controllers\NotificationController();
-        $user = $request->getAttribute('user');
-        $result = $controller->getUnreadCount($user->id, $user->role);
-        $response->getBody()->write(json_encode($result));
-        return $response->withHeader('Content-Type', 'application/json');
-    })->add(new AuthMiddleware());
-    // (duplicates removed) PUT/DELETE for notifications are defined above using PSR-7 handlers
-
     // ===== REPORTS & ANALYTICS ROUTES =====
     $group->get('/reports/class-performance', [ReportsController::class, 'getClassPerformance'])->add(new AuthMiddleware());
     $group->get('/reports/subject-performance', [ReportsController::class, 'getSubjectPerformance'])->add(new AuthMiddleware());
@@ -580,6 +683,7 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/admin/settings', [SettingsController::class, 'getSettings'])->add(new AuthMiddleware());
     $group->put('/admin/settings', [SettingsController::class, 'updateSettings'])->add(new AuthMiddleware());
     $group->post('/admin/settings/backup', [SettingsController::class, 'createBackup'])->add(new AuthMiddleware());
+    $group->post('/admin/settings/test-email', [SettingsController::class, 'testEmail'])->add(new AuthMiddleware());
 
     // Reports (Admin)
     $group->get('/admin/reports/overview', [ReportsController::class, 'getOverview'])->add(new AuthMiddleware());
@@ -606,4 +710,46 @@ $app->group('/api', function (RouteCollectorProxy $group) {
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     })->add(new AuthMiddleware());
+
+    // ===== USER NOTIFICATIONS ROUTES handled in /api/api alias section (lines 56-107) =====
+    // Note: Main notification routes are in the alias section to handle /api/api/ paths
+    
+    // Password Reset routes (public, no auth required)
+    $group->post('/password-reset/request', [PasswordResetController::class, 'requestReset']);
+    $group->post('/password-reset/verify', [PasswordResetController::class, 'verifyToken']);
+    $group->post('/password-reset/reset', [PasswordResetController::class, 'resetPassword']);
+
+    // ===== TOWN MASTER MANAGEMENT (Admin) =====
+    $group->get('/admin/towns', [\App\Controllers\TownMasterController::class, 'getAllTowns'])->add(new AuthMiddleware());
+    $group->post('/admin/towns', [\App\Controllers\TownMasterController::class, 'createTown'])->add(new AuthMiddleware());
+    $group->put('/admin/towns/{id}', [\App\Controllers\TownMasterController::class, 'updateTown'])->add(new AuthMiddleware());
+    $group->delete('/admin/towns/{id}', [\App\Controllers\TownMasterController::class, 'deleteTown'])->add(new AuthMiddleware());
+    
+    $group->get('/admin/towns/{id}/blocks', [\App\Controllers\TownMasterController::class, 'getBlocks'])->add(new AuthMiddleware());
+    $group->put('/admin/blocks/{id}', [\App\Controllers\TownMasterController::class, 'updateBlock'])->add(new AuthMiddleware());
+    
+    $group->post('/admin/towns/{id}/assign-master', [\App\Controllers\TownMasterController::class, 'assignTownMaster'])->add(new AuthMiddleware());
+    $group->delete('/admin/town-masters/{id}', [\App\Controllers\TownMasterController::class, 'removeTownMaster'])->add(new AuthMiddleware());
+
+    // ===== TOWN MASTER ROUTES (Teacher with Town Master role) =====
+    $group->get('/town-master/my-town', [\App\Controllers\TownMasterController::class, 'getMyTown'])->add(new AuthMiddleware());
+    $group->get('/town-master/students', [\App\Controllers\TownMasterController::class, 'getMyStudents'])->add(new AuthMiddleware());
+    $group->post('/town-master/register-student', [\App\Controllers\TownMasterController::class, 'registerStudent'])->add(new AuthMiddleware());
+    $group->post('/town-master/attendance', [\App\Controllers\TownMasterController::class, 'recordAttendance'])->add(new AuthMiddleware());
+    $group->get('/town-master/attendance', [\App\Controllers\TownMasterController::class, 'getAttendance'])->add(new AuthMiddleware());
+
+    // Teacher-prefixed aliases for town master routes
+    $group->get('/teacher/town-master/my-town', [\App\Controllers\TownMasterController::class, 'getMyTown'])->add(new AuthMiddleware());
+    $group->get('/teacher/town-master/students', [\App\Controllers\TownMasterController::class, 'getMyStudents'])->add(new AuthMiddleware());
+    $group->post('/teacher/town-master/register-student', [\App\Controllers\TownMasterController::class, 'registerStudent'])->add(new AuthMiddleware());
+    $group->post('/teacher/town-master/attendance', [\App\Controllers\TownMasterController::class, 'recordAttendance'])->add(new AuthMiddleware());
+    $group->get('/teacher/town-master/attendance', [\App\Controllers\TownMasterController::class, 'getAttendance'])->add(new AuthMiddleware());
+
+    // ===== USER ROLES MANAGEMENT (Admin) =====
+    $group->get('/admin/user-roles', [\App\Controllers\UserRoleController::class, 'getAllRoles'])->add(new AuthMiddleware());
+    $group->get('/admin/user-roles/available', [\App\Controllers\UserRoleController::class, 'getAvailableRoles'])->add(new AuthMiddleware());
+    $group->get('/admin/user-roles/{role}', [\App\Controllers\UserRoleController::class, 'getUsersByRole'])->add(new AuthMiddleware());
+    $group->get('/admin/user-roles/{user_type}/{user_id}', [\App\Controllers\UserRoleController::class, 'getUserRoles'])->add(new AuthMiddleware());
+    $group->post('/admin/user-roles', [\App\Controllers\UserRoleController::class, 'assignRole'])->add(new AuthMiddleware());
+    $group->delete('/admin/user-roles/{id}', [\App\Controllers\UserRoleController::class, 'removeRole'])->add(new AuthMiddleware());
 });

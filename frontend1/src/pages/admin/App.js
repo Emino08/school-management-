@@ -16,6 +16,8 @@ import LoginPage from "../LoginPage";
 import AdminRegisterPage from "./AdminRegisterPage";
 import ChooseUser from "../ChooseUser";
 import PublicResultChecker from "../PublicResultChecker";
+import ForgotPassword from "../ForgotPassword";
+import ResetPassword from "../ResetPassword";
 
 // Parent Portal
 import ParentLogin from "../parent/ParentLogin";
@@ -30,6 +32,11 @@ import ParentCommunications from "../parent/ParentCommunications";
 import MedicalLogin from "../medical/MedicalLogin";
 import MedicalDashboard from "../medical/MedicalDashboard";
 import CreateMedicalRecord from "../medical/CreateMedicalRecord";
+import MedicalStudentSearch from "../medical/MedicalStudentSearch";
+
+// Exam Officer Portal
+import ExamOfficerLogin from "../examOfficer/ExamOfficerLogin";
+import ExamOfficerDashboard from "../examOfficer/ExamOfficerDashboard";
 
 // House Management
 import RegisterStudentToHouse from "../house/RegisterStudentToHouse";
@@ -44,17 +51,18 @@ const App = () => {
       {currentRole === null && (
         <Routes>
           <Route path="/" element={<Homepage />} />
-          <Route path="/choose" element={<ChooseUser visitor="normal" />} />
-          <Route
-            path="/chooseasguest"
-            element={<ChooseUser visitor="guest" />}
-          />
+          <Route path="/choose" element={<ChooseUser />} />
 
           <Route path="/Adminlogin" element={<LoginPage role="Admin" />} />
           <Route path="/Studentlogin" element={<LoginPage role="Student" />} />
           <Route path="/Teacherlogin" element={<LoginPage role="Teacher" />} />
 
           <Route path="/Adminregister" element={<AdminRegisterPage />} />
+
+          {/* Password Reset Routes */}
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/forgot-password/:role" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Parent Portal Routes */}
           <Route path="/parent/login" element={<ParentLogin />} />
@@ -69,6 +77,11 @@ const App = () => {
           <Route path="/medical/login" element={<MedicalLogin />} />
           <Route path="/medical/dashboard" element={<MedicalDashboard />} />
           <Route path="/medical/create-record" element={<CreateMedicalRecord />} />
+          <Route path="/medical/search-student" element={<MedicalStudentSearch />} />
+
+          {/* Exam Officer Portal */}
+          <Route path="/ExamOfficer" element={<ExamOfficerLogin />} />
+          <Route path="/ExamOfficer/dashboard" element={<ExamOfficerDashboard />} />
 
           {/* House Management Routes */}
           <Route path="/house/register-student" element={<RegisterStudentToHouse />} />

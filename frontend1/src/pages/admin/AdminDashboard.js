@@ -57,6 +57,7 @@ import TimetableManagement from "./timetable/TimetableManagement";
 import SystemSettings from "./SystemSettings";
 import ActivityLogs from "./ActivityLogs";
 import UserManagement from "./UserManagement";
+import TownMasterManagement from "./TownMasterManagement";
 
 const AdminDashboard = () => {
     const [open, setOpen] = useState(false);
@@ -249,6 +250,7 @@ const AdminDashboard = () => {
                             <Route path="Admin/settings" element={<SystemSettings/>}/>
                             <Route path="Admin/users" element={<UserManagement/>}/>
                             <Route path="Admin/activity-logs" element={<ActivityLogs/>}/>
+                            <Route path="Admin/town-master" element={<TownMasterManagement/>}/>
 
                             {/* Catch-all route - must be last */}
                             <Route path="*" element={<Navigate to="/Admin/dashboard"/>}/>

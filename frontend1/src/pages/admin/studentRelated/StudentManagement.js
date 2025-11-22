@@ -184,16 +184,25 @@ const StudentManagement = () => {
         headers: { Authorization: `Bearer ${currentUser?.token}` },
         body: form,
       });
-      const data = await res.json();
-      if (data.success) {
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        data = null;
+      }
+
+      if (res.ok && data?.success) {
         fetchStudents();
         toast.success('Students uploaded successfully');
       } else {
-        toast.error(data.message || 'Bulk upload failed');
+        const serverMessage = data?.message || data?.error;
+        const fallback = await res.text().catch(() => '');
+        const message = serverMessage || fallback || 'Bulk upload failed. Please verify the CSV headers and data.';
+        toast.error(message);
       }
     } catch (e) {
       console.error('Bulk upload failed', e);
-      toast.error('Bulk upload failed');
+      toast.error(e?.message || 'Bulk upload failed');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

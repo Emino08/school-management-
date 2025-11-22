@@ -24,11 +24,17 @@ class MedicalStaff extends BaseModel
 
     public function getAllByAdmin($adminId)
     {
-        return $this->findAll(['admin_id' => $adminId], 'name ASC');
+        $sql = "SELECT * FROM {$this->table} WHERE admin_id = :admin_id ORDER BY name ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':admin_id' => $adminId]);
+        return $stmt->fetchAll();
     }
 
     public function getActiveStaff($adminId)
     {
-        return $this->findAll(['admin_id' => $adminId, 'is_active' => 1], 'name ASC');
+        $sql = "SELECT * FROM {$this->table} WHERE admin_id = :admin_id AND is_active = 1 ORDER BY name ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':admin_id' => $adminId]);
+        return $stmt->fetchAll();
     }
 }

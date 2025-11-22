@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { toast } from 'sonner';
 import { MdAdd, MdCheck, MdDelete, MdEdit, MdCalendarToday, MdInfo } from "react-icons/md";
+import axios from "../../../redux/axiosConfig";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -126,6 +127,45 @@ const ManageAcademicYears = () => {
   };
   
   const currentYear = academicYears.find(year => isCurrentYear(year));
+  const [newPublicationDate, setNewPublicationDate] = useState("");
+
+  const formatDate = (value) => {
+    if (!value) return 'Not set';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString();
+  };
+
+  useEffect(() => {
+    if (currentYear?.result_publication_date) {
+      const d = new Date(currentYear.result_publication_date);
+      if (!Number.isNaN(d.getTime())) {
+        const tzOffset = d.getTimezoneOffset() * 60000;
+        const local = new Date(d.getTime() - tzOffset).toISOString().slice(0, 10);
+        setNewPublicationDate(local);
+      }
+    } else {
+      setNewPublicationDate("");
+    }
+  }, [currentYear]);
+
+  const updatePublicationDate = async () => {
+    if (!currentYear?.id) return;
+    if (!newPublicationDate) {
+      toast.error("Set a publication date before saving.");
+      return;
+    }
+    try {
+      await axios.put(
+        `${import.meta.env.VITE_API_BASE_URL}/academic-years/${currentYear.id}`,
+        { result_publication_date: newPublicationDate }
+      );
+      toast.success("Result publication date updated.");
+      dispatch(getAllAcademicYears());
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Failed to update publication date");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -186,6 +226,32 @@ const ManageAcademicYears = () => {
                       year: 'numeric'
                     })}
                   </p>
+                  <p className="text-sm text-gray-600">
+                    Result publication date: {formatDate(currentYear.result_publication_date)}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    <Label htmlFor="publicationDate">Update result publication date</Label>
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <Input
+                        id="publicationDate"
+                        type="date"
+                        value={newPublicationDate}
+                        onChange={(e) => setNewPublicationDate(e.target.value)}
+                        className="max-w-xs"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={updatePublicationDate}
+                        disabled={academicYearLoading}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Principals can update this date to control when students see their results.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -315,6 +381,9 @@ const ManageAcademicYears = () => {
                       </div>
                       <p className="text-sm text-gray-600">
                         {new Date(year.start_date).toLocaleDateString()} - {new Date(year.end_date).toLocaleDateString()}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Result publication date: {formatDate(year.result_publication_date)}
                       </p>
                     </div>
                   </div>

@@ -92,9 +92,28 @@ class TeacherController
                 }
             }
 
+            // Handle name splitting
+            $fullName = $data['name'] ?? '';
+            $firstName = $data['first_name'] ?? '';
+            $lastName = $data['last_name'] ?? '';
+            
+            // If first_name/last_name not provided but name is, split it
+            if (empty($firstName) && empty($lastName) && !empty($fullName)) {
+                $nameParts = explode(' ', trim($fullName), 2);
+                $firstName = $nameParts[0];
+                $lastName = $nameParts[1] ?? '';
+            }
+            
+            // Build full name if not provided
+            if (empty($fullName) && (!empty($firstName) || !empty($lastName))) {
+                $fullName = trim($firstName . ' ' . $lastName);
+            }
+
             $teacherData = Validator::sanitize([
                 'admin_id' => $user->id,
-                'name' => $data['name'],
+                'name' => $fullName,
+                'first_name' => $firstName,
+                'last_name' => $lastName,
                 'email' => $data['email'],
                 'password' => $data['password'],
                 'phone' => $data['phone'] ?? null,
@@ -103,6 +122,7 @@ class TeacherController
                 'experience_years' => $expYears,
                 'is_exam_officer' => (!empty($data['is_exam_officer']) || !empty($data['isExamOfficer'])) ? 1 : 0,
                 'can_approve_results' => !empty($data['can_approve_results']) ? 1 : 0,
+                'is_town_master' => !empty($data['is_town_master']) ? 1 : 0,
                 'is_class_master' => $isClassMasterIn ? 1 : 0,
                 'class_master_of' => $classMasterOf
             ]);
@@ -261,6 +281,36 @@ class TeacherController
         return $response->withHeader('Content-Type', 'application/json');
     }
 
+    /**
+     * Get submissions for a teacher (grades/results they have submitted).
+     * Lightweight implementation to unblock the frontend; returns empty array if no data.
+     */
+    public function getSubmissions(Request $request, Response $response, $args)
+    {
+        try {
+            $teacherId = (int)($args['id'] ?? 0);
+            if ($teacherId <= 0) {
+                $response->getBody()->write(json_encode(['success' => false, 'message' => 'Invalid teacher id']));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+
+            // If there's a result table to pull from, hook it here. For now, return empty list.
+            $submissions = [];
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'submissions' => $submissions
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to fetch submissions: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
     public function updateTeacher(Request $request, Response $response, $args)
     {
         $data = Validator::sanitize($request->getParsedBody());
@@ -288,7 +338,7 @@ class TeacherController
         if (isset($raw['class_master_of']) && $raw['class_master_of'] !== '') {
             $updateRules['class_master_of'] = 'numeric';
         }
-        foreach (['is_exam_officer','is_class_master','can_approve_results'] as $boolField) {
+        foreach (['is_exam_officer','is_class_master','can_approve_results','is_town_master'] as $boolField) {
             if (array_key_exists($boolField, $raw) && $raw[$boolField] !== '') {
                 $updateRules[$boolField] = isset($updateRules[$boolField]) ? $updateRules[$boolField] . '|boolean' : 'boolean';
             }
@@ -304,6 +354,8 @@ class TeacherController
         // Whitelist updatable columns to avoid SQL errors on unknown fields
         $allowedFields = [
             'name',
+            'first_name',
+            'last_name',
             'password',
             'phone',
             'address',
@@ -311,10 +363,23 @@ class TeacherController
             'experience_years',
             'is_exam_officer',
             'can_approve_results',
+            'is_town_master',
             'is_class_master',
             'class_master_of'
         ];
         $data = array_intersect_key($data, array_flip($allowedFields));
+
+        // Handle name splitting if provided
+        if (isset($data['name']) && !empty($data['name'])) {
+            $nameParts = explode(' ', trim($data['name']), 2);
+            $data['first_name'] = $nameParts[0];
+            $data['last_name'] = isset($nameParts[1]) ? $nameParts[1] : '';
+        } elseif (isset($data['first_name']) || isset($data['last_name'])) {
+            // If first_name or last_name provided, reconstruct name
+            $firstName = isset($data['first_name']) ? trim($data['first_name']) : '';
+            $lastName = isset($data['last_name']) ? trim($data['last_name']) : '';
+            $data['name'] = trim($firstName . ' ' . $lastName);
+        }
 
         // Handle password
         if (isset($data['password']) && !empty($data['password'])) {
@@ -578,6 +643,22 @@ class TeacherController
             return $response->withHeader('Content-Type', 'application/json');
         } catch (\Exception $e) {
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Failed to fetch subjects: ' . $e->getMessage()]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    public function getTeacherClasses(Request $request, Response $response, $args)
+    {
+        $user = $request->getAttribute('user');
+
+        try {
+            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $classes = $this->assignmentModel->getTeacherClasses($args['id'], $currentYear ? $currentYear['id'] : null);
+
+            $response->getBody()->write(json_encode(['success' => true, 'classes' => $classes]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Failed to fetch classes: ' . $e->getMessage()]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
@@ -1198,6 +1279,188 @@ class TeacherController
             ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
+    }
+
+    /**
+     * Bulk upload teachers via CSV
+     */
+    public function bulkUpload(Request $request, Response $response)
+    {
+        $user = $request->getAttribute('user');
+        $uploadedFiles = $request->getUploadedFiles();
+
+        if (empty($uploadedFiles['file'])) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'No file uploaded']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        $file = $uploadedFiles['file'];
+        if ($file->getError() !== UPLOAD_ERR_OK) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'File upload error']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        $tmpPath = $file->getStream()->getMetadata('uri');
+        $rows = $this->parseCSV($tmpPath);
+
+        if (empty($rows)) {
+            $response->getBody()->write(json_encode(['success' => false, 'message' => 'CSV file is empty or invalid']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        $header = array_shift($rows);
+        $expectedHeaders = ['First Name', 'Last Name', 'Email', 'Password', 'Phone', 'Address', 'Qualification', 'Experience Years'];
+        
+        // Normalize headers (trim, lowercase)
+        $normalizedHeader = array_map(fn($h) => strtolower(trim($h)), $header);
+        $expectedNormalized = array_map(fn($h) => strtolower(trim($h)), $expectedHeaders);
+
+        // Check if headers match (order-insensitive)
+        foreach ($expectedNormalized as $expected) {
+            if (!in_array($expected, $normalizedHeader)) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => "Missing required header: $expected. Expected headers: " . implode(', ', $expectedHeaders)
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+        }
+
+        // Map header positions
+        $headerMap = [];
+        foreach ($normalizedHeader as $index => $headerName) {
+            $headerMap[$headerName] = $index;
+        }
+
+        $successCount = 0;
+        $errorCount = 0;
+        $errors = [];
+
+        foreach ($rows as $rowIndex => $row) {
+            $rowNum = $rowIndex + 2; // +2 for header + 0-index
+
+            try {
+                $firstName = trim($row[$headerMap['first name']] ?? '');
+                $lastName = trim($row[$headerMap['last name']] ?? '');
+                $email = trim($row[$headerMap['email']] ?? '');
+                $password = trim($row[$headerMap['password']] ?? '');
+                $phone = trim($row[$headerMap['phone']] ?? '');
+                $address = trim($row[$headerMap['address']] ?? '');
+                $qualification = trim($row[$headerMap['qualification']] ?? '');
+                $experienceYears = trim($row[$headerMap['experience years']] ?? '');
+
+                // Validation
+                if (empty($firstName) || empty($lastName)) {
+                    $errors[] = "Row $rowNum: First name and last name are required";
+                    $errorCount++;
+                    continue;
+                }
+
+                if (empty($email)) {
+                    $errors[] = "Row $rowNum: Email is required";
+                    $errorCount++;
+                    continue;
+                }
+
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "Row $rowNum: Invalid email format";
+                    $errorCount++;
+                    continue;
+                }
+
+                if (empty($password)) {
+                    $errors[] = "Row $rowNum: Password is required";
+                    $errorCount++;
+                    continue;
+                }
+
+                if (strlen($password) < 6) {
+                    $errors[] = "Row $rowNum: Password must be at least 6 characters";
+                    $errorCount++;
+                    continue;
+                }
+
+                // Check if email already exists
+                $existing = $this->teacherModel->findByEmail($email);
+                if ($existing) {
+                    $errors[] = "Row $rowNum: Email $email already exists";
+                    $errorCount++;
+                    continue;
+                }
+
+                // Build full name
+                $fullName = trim($firstName . ' ' . $lastName);
+
+                // Create teacher
+                $teacherData = [
+                    'admin_id' => $user->id,
+                    'name' => $fullName,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'email' => $email,
+                    'password' => password_hash($password, PASSWORD_BCRYPT),
+                    'phone' => $phone ?: null,
+                    'address' => $address ?: null,
+                    'qualification' => $qualification ?: null,
+                    'experience_years' => $experienceYears !== '' ? (int)$experienceYears : null,
+                ];
+
+                $this->teacherModel->create($teacherData);
+                $successCount++;
+
+            } catch (\Exception $e) {
+                $errors[] = "Row $rowNum: " . $e->getMessage();
+                $errorCount++;
+            }
+        }
+
+        $message = "Bulk upload completed. Success: $successCount, Errors: $errorCount";
+        $responseData = [
+            'success' => $successCount > 0,
+            'message' => $message,
+            'successCount' => $successCount,
+            'errorCount' => $errorCount,
+            'errors' => array_slice($errors, 0, 10) // Limit to first 10 errors
+        ];
+
+        $response->getBody()->write(json_encode($responseData));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    /**
+     * Download CSV template for bulk teacher upload
+     */
+    public function bulkTemplate(Request $request, Response $response)
+    {
+        $headers = ['First Name', 'Last Name', 'Email', 'Password', 'Phone', 'Address', 'Qualification', 'Experience Years'];
+        $csv = implode(',', $headers) . "\n";
+        $csv .= "John,Doe,john.doe@school.com,password123,555-1234,123 Main St,Bachelor's in Education,5\n";
+        $csv .= "Jane,Smith,jane.smith@school.com,password456,555-5678,456 Oak Ave,Master's in Mathematics,8\n";
+
+        $response->getBody()->write($csv);
+        return $response
+            ->withHeader('Content-Type', 'text/csv')
+            ->withHeader('Content-Disposition', 'attachment; filename="teachers_template.csv"');
+    }
+
+    /**
+     * Parse CSV file
+     */
+    private function parseCSV($filePath)
+    {
+        $rows = [];
+        if (($handle = fopen($filePath, 'r')) !== false) {
+            while (($data = fgetcsv($handle, 1000, ',')) !== false) {
+                $rows[] = $data;
+            }
+            fclose($handle);
+        }
+
+        // Remove empty rows
+        if (empty($rows) || empty(array_filter($rows[0], fn($x) => trim((string)$x) !== ''))) {
+            return null;
+        }
+        return $rows;
     }
 }
 

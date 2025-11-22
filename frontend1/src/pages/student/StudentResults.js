@@ -53,9 +53,14 @@ const StudentResults = () => {
             if (response.data.success) {
                 setExamResults(response.data);
                 setSelectedExam(examId);
+            } else {
+                toast.error(response.data.message || 'Results not available yet');
             }
         } catch (error) {
-            toast.error('Failed to load exam results');
+            const msg = error.response?.data?.message || 'Results not yet published';
+            toast.error(msg);
+            setExamResults(null);
+            setSelectedExam(null);
             console.error('Error fetching exam results:', error);
         }
     };

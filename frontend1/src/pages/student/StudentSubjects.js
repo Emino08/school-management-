@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux';
-import { getSubjectList, getClassDetails } from '../../redux/sclassRelated/sclassHandle';
+import { getSubjectList } from '../../redux/sclassRelated/sclassHandle';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { MdInsertChart, MdTableChart, MdSchool, MdBook } from "react-icons/md";
 const StudentSubjects = () => {
 
     const dispatch = useDispatch();
-    const { subjectsList, sclassDetails } = useSelector((state) => state.sclass);
+    const { subjectsList } = useSelector((state) => state.sclass);
     const { userDetails, currentUser, loading, response, error } = useSelector((state) => state.user);
 
     useEffect(() => {
@@ -38,7 +38,6 @@ const StudentSubjects = () => {
         const classId = currentUser?.sclassName?._id || currentUser?.class_id || userDetails?.class_id;
         if (classId) {
             dispatch(getSubjectList(classId, "ClassSubjects"));
-            dispatch(getClassDetails(classId, "Sclass"));
         }
     }, [dispatch, currentUser?.sclassName?._id, currentUser?.class_id, userDetails?.class_id]);
 
@@ -78,9 +77,11 @@ const StudentSubjects = () => {
     };
 
     const renderClassDetailsSection = () => {
-        const className = sclassDetails?.class_name || sclassDetails?.sclassName ||
+        const className = userDetails?.sclassName?.sclassName || userDetails?.class_name ||
                          currentUser?.sclassName?.sclassName || currentUser?.class_name ||
                          'Not Assigned';
+        const gradeLevel = userDetails?.sclassName?.grade_level || currentUser?.sclassName?.grade_level;
+        const section = userDetails?.sclassName?.section || currentUser?.sclassName?.section;
 
         return (
             <div className="container mx-auto p-4 max-w-4xl">
@@ -98,16 +99,16 @@ const StudentSubjects = () => {
                                 <span className="font-semibold text-gray-700">Class:</span>
                                 <span className="text-lg text-purple-600 font-medium">{className}</span>
                             </div>
-                            {sclassDetails?.grade_level && (
+                            {gradeLevel && (
                                 <div className="flex items-center gap-2">
                                     <span className="font-semibold text-gray-700">Grade Level:</span>
-                                    <span className="text-gray-600">{sclassDetails.grade_level}</span>
+                                    <span className="text-gray-600">{gradeLevel}</span>
                                 </div>
                             )}
-                            {sclassDetails?.section && (
+                            {section && (
                                 <div className="flex items-center gap-2">
                                     <span className="font-semibold text-gray-700">Section:</span>
-                                    <span className="text-gray-600">{sclassDetails.section}</span>
+                                    <span className="text-gray-600">{section}</span>
                                 </div>
                             )}
                         </div>

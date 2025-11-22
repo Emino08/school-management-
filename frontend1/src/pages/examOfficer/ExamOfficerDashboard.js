@@ -55,7 +55,7 @@ const ExamOfficerDashboard = () => {
     const storedOfficer = localStorage.getItem("examOfficer");
 
     if (!token || !storedOfficer) {
-      navigate("/ExamOfficer/login");
+      navigate("/ExamOfficer");
       return;
     }
 
@@ -202,7 +202,7 @@ const ExamOfficerDashboard = () => {
   const handleLogout = () => {
     localStorage.removeItem("examOfficerToken");
     localStorage.removeItem("examOfficer");
-    navigate("/ExamOfficer/login");
+    navigate("/ExamOfficer");
   };
 
   return (

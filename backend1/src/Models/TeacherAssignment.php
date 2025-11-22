@@ -43,6 +43,26 @@ class TeacherAssignment extends BaseModel
         return $stmt->fetchAll();
     }
 
+    public function getTeacherClasses($teacherId, $academicYearId)
+    {
+        $sql = "SELECT DISTINCT c.id, c.class_name, c.section, c.grade_level,
+                       COUNT(DISTINCT s.id) as subject_count
+                FROM {$this->table} ta
+                INNER JOIN subjects s ON ta.subject_id = s.id
+                INNER JOIN classes c ON s.class_id = c.id
+                WHERE ta.teacher_id = :teacher_id
+                  AND ta.academic_year_id = :academic_year_id
+                GROUP BY c.id, c.class_name, c.section, c.grade_level
+                ORDER BY c.grade_level, c.class_name";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            ':teacher_id' => $teacherId,
+            ':academic_year_id' => $academicYearId
+        ]);
+        return $stmt->fetchAll();
+    }
+
     public function removeAssignment($teacherId, $subjectId, $academicYearId)
     {
         $sql = "DELETE FROM {$this->table}

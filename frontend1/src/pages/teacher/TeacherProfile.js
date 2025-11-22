@@ -7,13 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useSelector } from 'react-redux';
 import axios from '../../redux/axiosConfig';
-import useInSession from '@/hooks/useInSession';
-import { RefreshCw } from 'lucide-react';
 
 const TeacherProfile = () => {
   const { currentUser, response, error } = useSelector((state) => state.user);
-  const [subjects, setSubjects] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [examLoading, setExamLoading] = useState(false);
   const [pendingResults, setPendingResults] = useState([]);
   const [exams, setExams] = useState([]);
@@ -22,12 +18,6 @@ const TeacherProfile = () => {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [attendanceData, setAttendanceData] = useState([]);
-  const [selectedAttendanceSubject, setSelectedAttendanceSubject] = useState('');
-  const [selectedGradeSubject, setSelectedGradeSubject] = useState('');
-  const [gradesData, setGradesData] = useState([]);
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [gradesLoading, setGradesLoading] = useState(false);
   const [pendingGrades, setPendingGrades] = useState([]);
   const [pendingGradesLoading, setPendingGradesLoading] = useState(false);
   const [selectedResultSubject, setSelectedResultSubject] = useState('ALL');
@@ -40,96 +30,6 @@ const TeacherProfile = () => {
 
   // Define profile at the top to avoid initialization error
   const profile = currentUser?.teacher || currentUser || {};
-
-  useEffect(() => {
-    const fetchSubjects = async () => {
-      if (!currentUser?.teacher?.id && !currentUser?.id) return;
-      setLoading(true);
-      try {
-        const teacherId = currentUser?.teacher?.id || currentUser?.id;
-        console.log('Fetching subjects for teacher:', teacherId);
-        const res = await axios.get(`${API_URL}/teachers/${teacherId}/subjects`);
-        console.log('Subjects response:', res.data);
-        if (res.data?.success) {
-          setSubjects(res.data.subjects || []);
-          console.log('Subjects set:', res.data.subjects);
-        }
-      } catch (e) {
-        console.error('Failed to fetch teacher subjects', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSubjects();
-  }, [currentUser]);
-
-  // In-session indicator for attendance tab
-  const selectedAttendanceObj = subjects.find(s => String(s.id) === String(selectedAttendanceSubject));
-  const classIdForAttendance = selectedAttendanceObj?.class_id || selectedAttendanceObj?.classId;
-  const teacherId = currentUser?.teacher?.id || currentUser?.id;
-  const { inSession: inSessionAttendance, loading: inSessionAttendanceLoading, entries: inSessionEntries, refresh: refreshInSession } = useInSession({ classId: classIdForAttendance ? parseInt(classIdForAttendance, 10) : undefined, subjectId: selectedAttendanceSubject && selectedAttendanceSubject !== 'ALL' ? parseInt(selectedAttendanceSubject, 10) : undefined, teacherId: teacherId ? parseInt(teacherId, 10) : undefined });
-  const [now, setNow] = useState(new Date());
-  useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
-  const remainingAttendance = (() => {
-    if (!inSessionAttendance || !inSessionEntries || inSessionEntries.length === 0) return '';
-    const end = inSessionEntries[0]?.end_time;
-    if (!end) return '';
-    const [hh, mm, ss] = end.split(':').map(Number);
-    const endDate = new Date();
-    endDate.setHours(hh || 0, mm || 0, ss || 0, 0);
-    const diffMs = endDate - now;
-    if (diffMs <= 0) return 'ending...';
-    const mins = Math.floor(diffMs / 60000);
-    const hrs = Math.floor(mins / 60);
-    const remM = mins % 60;
-    return hrs > 0 ? `${hrs}h ${remM}m remaining` : `${remM}m remaining`;
-  })();
-
-  // Fetch attendance data
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      if (!selectedAttendanceSubject || selectedAttendanceSubject === 'ALL') {
-        setAttendanceData([]);
-        return;
-      }
-      setAttendanceLoading(true);
-      try {
-        const teacherId = currentUser?.teacher?.id || currentUser?.id;
-        const res = await axios.get(`${API_URL}/teachers/${teacherId}/subjects/${selectedAttendanceSubject}/attendance`);
-        if (res.data?.success) {
-          setAttendanceData(res.data.attendance || []);
-        }
-      } catch (e) {
-        console.error('Failed to fetch attendance', e);
-      } finally {
-        setAttendanceLoading(false);
-      }
-    };
-    fetchAttendance();
-  }, [selectedAttendanceSubject, currentUser]);
-
-  // Fetch grades data
-  useEffect(() => {
-    const fetchGrades = async () => {
-      if (!selectedGradeSubject || selectedGradeSubject === 'ALL') {
-        setGradesData([]);
-        return;
-      }
-      setGradesLoading(true);
-      try {
-        const teacherId = currentUser?.teacher?.id || currentUser?.id;
-        const res = await axios.get(`${API_URL}/teachers/${teacherId}/subjects/${selectedGradeSubject}/students`);
-        if (res.data?.success) {
-          setGradesData(res.data.students || []);
-        }
-      } catch (e) {
-        console.error('Failed to fetch students for grading', e);
-      } finally {
-        setGradesLoading(false);
-      }
-    };
-    fetchGrades();
-  }, [selectedGradeSubject, currentUser]);
 
   // Fetch pending grades for result management
   useEffect(() => {
@@ -230,44 +130,6 @@ const TeacherProfile = () => {
     }
   };
 
-  const handleAttendanceToggle = async (studentId, currentStatus) => {
-    const newStatus = currentStatus === 'present' ? 'absent' : 'present';
-    try {
-      const teacherId = currentUser?.teacher?.id || currentUser?.id;
-      await axios.post(`${API_URL}/teachers/${teacherId}/subjects/${selectedAttendanceSubject}/attendance`, {
-        student_id: studentId,
-        status: newStatus,
-        date: new Date().toISOString().split('T')[0]
-      });
-
-      // Update local state
-      setAttendanceData(prev => prev.map(item =>
-        item.student_id === studentId ? { ...item, today_status: newStatus } : item
-      ));
-    } catch (e) {
-      console.error('Failed to update attendance', e);
-    }
-  };
-
-  const handleGradeSubmit = async (studentId, examId, score) => {
-    try {
-      const teacherId = currentUser?.teacher?.id || currentUser?.id;
-      await axios.post(`${API_URL}/teachers/${teacherId}/subjects/${selectedGradeSubject}/grades`, {
-        student_id: studentId,
-        exam_id: examId,
-        score: parseFloat(score)
-      });
-
-      // Refresh grades data
-      const res = await axios.get(`${API_URL}/teachers/${teacherId}/subjects/${selectedGradeSubject}/students`);
-      if (res.data?.success) {
-        setGradesData(res.data.students || []);
-      }
-    } catch (e) {
-      console.error('Failed to submit grade', e);
-    }
-  };
-
   const approveGrade = async (resultId) => {
     try {
       await axios.post(`${API_URL}/result-management/approve/${resultId}`);
@@ -331,9 +193,6 @@ const TeacherProfile = () => {
           <Tabs defaultValue="profile">
             <TabsList className="flex flex-wrap gap-2">
               <TabsTrigger value="profile">Profile</TabsTrigger>
-              <TabsTrigger value="subjects">Subjects</TabsTrigger>
-              <TabsTrigger value="attendance">Attendance</TabsTrigger>
-              <TabsTrigger value="grades">Submit Grades</TabsTrigger>
               {profile.is_exam_officer && profile.can_approve_results && (
                 <TabsTrigger value="result-management">Result Management</TabsTrigger>
               )}
@@ -379,197 +238,11 @@ const TeacherProfile = () => {
               </div>
             </TabsContent>
 
-            <TabsContent value="subjects">
-              {loading ? (
-                <p>Loading subjects...</p>
-              ) : subjects.length === 0 ? (
-                <p>No subjects assigned.</p>
-              ) : (
-                <div className="mt-4 space-y-2">
-                  {subjects.map((sub) => (
-                    <div key={sub.id} className="p-3 border rounded-md flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{sub.subject_name}</p>
-                        <p className="text-sm text-gray-500">Class: {sub.class_name || sub.class_id}</p>
-                      </div>
-                      <span className="text-xs text-gray-500">Code: {sub.subject_code || '-'}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+            
 
-            <TabsContent value="attendance">
-              <div className="mt-4 space-y-4">
-                <div className="flex items-center gap-4">
-                  <Label>Select Subject:</Label>
-                  <Select value={selectedAttendanceSubject} onValueChange={setSelectedAttendanceSubject}>
-                    <SelectTrigger className="w-64">
-                      <SelectValue placeholder="Choose a subject" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Subjects</SelectItem>
-                      {subjects.map((sub) => (
-                        <SelectItem key={sub.id} value={String(sub.id)}>
-                          {sub.subject_name} - {sub.class_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            
 
-                {attendanceLoading ? (
-                  <p>Loading attendance data...</p>
-                ) : !selectedAttendanceSubject || selectedAttendanceSubject === 'ALL' ? (
-                  <p className="text-gray-500">Please select a subject to view attendance.</p>
-                ) : attendanceData.length === 0 ? (
-                  <p className="text-gray-500">No students found for this subject.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <div className="mb-2 text-sm text-gray-700 flex items-center gap-2">
-                      {inSessionAttendanceLoading ? 'Checking timetable...' : (inSessionAttendance ? 'Class is in session' : 'Attendance allowed only during scheduled class time')}
-                      <Button size="icon" variant="ghost" onClick={refreshInSession} title="Refresh session status">
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {inSessionAttendance && inSessionEntries && inSessionEntries.length > 0 && (
-                      <div className="mb-3 text-xs text-gray-600 flex items-center gap-3">
-                        <span>
-                          {inSessionEntries[0].day_of_week} • {inSessionEntries[0].start_time?.slice(0,5)} - {inSessionEntries[0].end_time?.slice(0,5)}
-                          {inSessionEntries[0].room_number ? ` • Room ${inSessionEntries[0].room_number}` : ''}
-                        </span>
-                        {remainingAttendance && <span className="text-emerald-700">({remainingAttendance})</span>}
-                      </div>
-                    )}
-                    <table className="w-full border-collapse border border-gray-300">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="border border-gray-300 px-4 py-2 text-left">No</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Name</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Total Attendance for This Class</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Percentage</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Today Attendance (Present / Absent)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {attendanceData.map((student, index) => (
-                          <tr key={student.student_id} className="hover:bg-gray-50">
-                            <td className="border border-gray-300 px-4 py-2">{index + 1}</td>
-                            <td className="border border-gray-300 px-4 py-2">{student.student_name}</td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {student.total_present || 0} / {student.total_classes || 0}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              <span className={`font-medium ${
-                                (student.attendance_percentage || 0) >= 75
-                                  ? 'text-green-600'
-                                  : 'text-red-600'
-                              }`}>
-                                {(student.attendance_percentage || 0).toFixed(1)}%
-                              </span>
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              <Button
-                                size="sm"
-                                variant={student.today_status === 'present' ? 'default' : 'destructive'}
-                                disabled={!inSessionAttendance}
-                                title={!inSessionAttendance ? (inSessionAttendanceLoading ? 'Checking timetable...' : 'Not in session') : ''}
-                                onClick={() => handleAttendanceToggle(student.student_id, student.today_status)}
-                              >
-                                {student.today_status === 'present' ? 'Present' : 'Absent'}
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="grades">
-              <div className="mt-4 space-y-4">
-                <div className="flex items-center gap-4">
-                  <Label>Select Subject:</Label>
-                  <Select value={selectedGradeSubject} onValueChange={setSelectedGradeSubject}>
-                    <SelectTrigger className="w-64">
-                      <SelectValue placeholder="Choose a subject" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Subjects</SelectItem>
-                      {subjects.map((sub) => (
-                        <SelectItem key={sub.id} value={String(sub.id)}>
-                          {sub.subject_name} - {sub.class_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {gradesLoading ? (
-                  <p>Loading students...</p>
-                ) : !selectedGradeSubject || selectedGradeSubject === 'ALL' ? (
-                  <p className="text-gray-500">Please select a subject to submit grades.</p>
-                ) : gradesData.length === 0 ? (
-                  <p className="text-gray-500">No students found for this subject.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse border border-gray-300">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="border border-gray-300 px-4 py-2 text-left">No</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Name</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Total Attendance for This Class</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Percentage</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Current Grade</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {gradesData.map((student, index) => (
-                          <tr key={student.student_id} className="hover:bg-gray-50">
-                            <td className="border border-gray-300 px-4 py-2">{index + 1}</td>
-                            <td className="border border-gray-300 px-4 py-2">{student.student_name}</td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {student.total_present || 0} / {student.total_classes || 0}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              <span className={`font-medium ${
-                                (student.attendance_percentage || 0) >= 75
-                                  ? 'text-green-600'
-                                  : 'text-red-600'
-                              }`}>
-                                {(student.attendance_percentage || 0).toFixed(1)}%
-                              </span>
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {student.current_grade ? (
-                                <span className="font-medium">{student.current_grade}</span>
-                              ) : (
-                                <span className="text-gray-400">Not graded</span>
-                              )}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  // Navigate to grade submission page
-                                  window.location.href = `/Teacher/class/student/marks/${student.student_id}/${selectedGradeSubject}`;
-                                }}
-                              >
-                                Submit Grade
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
+            
 
             {profile.is_exam_officer && profile.can_approve_results ? (
               <TabsContent value="result-management">
@@ -747,7 +420,7 @@ const TeacherProfile = () => {
                     </div>
                     <div className="flex gap-2">
                       <Button variant="outline" onClick={() => { setSelectedExam('ALL'); setSelectedSubject('ALL'); }}>Reset</Button>
-                      <Button asChild><a href="/ExamOfficer/dashboard">Open Full Dashboard</a></Button>
+                      <Button asChild><a href="/ExamOfficer">Open Full Dashboard</a></Button>
                     </div>
                   </div>
 

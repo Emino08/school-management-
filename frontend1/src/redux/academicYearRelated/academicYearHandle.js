@@ -72,9 +72,11 @@ export const setAcademicYear = (academicYear) => async (dispatch) => {
           `${import.meta.env.VITE_API_BASE_URL}/academic-years/${id}/set-current`
         );
         if (result.data.message) {
-        dispatch(academicYearSuccess(result.data.message));
+            dispatch(academicYearSuccess(result.data.message));
+            // Refresh the list so the current year (and its fee settings) stay in sync across the app
+            await dispatch(getAllAcademicYears());
         } else {
-        dispatch(academicYearFailed(result.data));
+            dispatch(academicYearFailed(result.data));
         }
     } catch (error) {
         const errData = error.response?.data?.message || error.message;

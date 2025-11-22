@@ -5,6 +5,7 @@ import { getAllTeachers } from "../../../redux/teacherRelated/teacherHandle";
 import { Button } from "@/components/ui/button";
 import { deleteUser } from "../../../redux/userRelated/userHandle";
 import { MdPersonRemove, MdPersonAddAlt1, MdEdit, MdDelete, MdDeleteForever, MdRestore, MdWarning } from "react-icons/md";
+import { FiBook, FiUsers } from "react-icons/fi";
 import SpeedDialTemplate from "../../../components/SpeedDialTemplate";
 import Modal from "../../../components/Modal";
 import EditTeacherModal from "../../../components/modals/EditTeacherModal";
@@ -20,6 +21,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const ShowTeachers = () => {
   const navigate = useNavigate();
@@ -42,6 +50,67 @@ const ShowTeachers = () => {
   const [teacherToDelete, setTeacherToDelete] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [teacherToEdit, setTeacherToEdit] = useState(null);
+  
+  // New modals for classes and subjects
+  const [classesModalOpen, setClassesModalOpen] = useState(false);
+  const [subjectsModalOpen, setSubjectsModalOpen] = useState(false);
+  const [selectedTeacherClasses, setSelectedTeacherClasses] = useState([]);
+  const [selectedTeacherSubjects, setSelectedTeacherSubjects] = useState([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [selectedTeacherName, setSelectedTeacherName] = useState('');
+
+  const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
+
+  const handleViewClasses = async (teacher) => {
+    setSelectedTeacherName(teacher.name);
+    setLoadingClasses(true);
+    setClassesModalOpen(true);
+    
+    try {
+      const response = await axios.get(`${API_URL}/teachers/${teacher._id}/classes`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` }
+      });
+      
+      if (response.data.success) {
+        setSelectedTeacherClasses(response.data.classes || []);
+      } else {
+        toast.error('Failed to load classes');
+        setSelectedTeacherClasses([]);
+      }
+    } catch (error) {
+      console.error('Error fetching classes:', error);
+      toast.error('Failed to load classes: ' + (error.response?.data?.message || error.message));
+      setSelectedTeacherClasses([]);
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
+
+  const handleViewSubjects = async (teacher) => {
+    setSelectedTeacherName(teacher.name);
+    setLoadingSubjects(true);
+    setSubjectsModalOpen(true);
+    
+    try {
+      const response = await axios.get(`${API_URL}/teachers/${teacher._id}/subjects`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` }
+      });
+      
+      if (response.data.success) {
+        setSelectedTeacherSubjects(response.data.subjects || []);
+      } else {
+        toast.error('Failed to load subjects');
+        setSelectedTeacherSubjects([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subjects:', error);
+      toast.error('Failed to load subjects: ' + (error.response?.data?.message || error.message));
+      setSelectedTeacherSubjects([]);
+    } finally {
+      setLoadingSubjects(false);
+    }
+  };
 
   const handleEditClick = (teacher) => {
     console.log('=== EDIT CLICK START ===');
@@ -73,7 +142,6 @@ const ShowTeachers = () => {
   const confirmDelete = async () => {
     if (!teacherToDelete) return;
 
-    const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
     const isHardDelete = deleteMode === 'hard';
 
     try {
@@ -143,23 +211,6 @@ const ShowTeachers = () => {
 
   return (
     <>
-      {/* TEST BUTTON */}
-      <div className="p-4 bg-yellow-100 border border-yellow-400">
-        <p className="text-sm mb-2">TEST: Click this button to test if modal works outside table</p>
-        <Button
-          onClick={() => {
-            console.log('TEST BUTTON CLICKED');
-            if (currentItems.length > 0) {
-              handleEditClick(currentItems[0]);
-            }
-          }}
-          className="bg-purple-600"
-        >
-          Test Edit Modal (First Teacher)
-        </Button>
-        <p className="text-xs mt-1">Modal open: {editModalOpen ? 'YES' : 'NO'}</p>
-      </div>
-
       <div className="relative overflow-x-auto shadow-md sm:rounded-lg">
         <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
           <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
@@ -175,6 +226,9 @@ const ShowTeachers = () => {
               </th>
               <th scope="col" className="px-6 py-3">
                 Roles
+              </th>
+              <th scope="col" className="px-6 py-3">
+                Classes
               </th>
               <th scope="col" className="px-6 py-3">
                 Subjects
@@ -218,7 +272,26 @@ const ShowTeachers = () => {
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  {teacher.subjects || 'No subjects assigned'}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleViewClasses(teacher)}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2"
+                  >
+                    <FiUsers className="w-4 h-4" />
+                    View Classes
+                  </Button>
+                </td>
+                <td className="px-6 py-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleViewSubjects(teacher)}
+                    className="text-green-600 hover:text-green-700 hover:bg-green-50 gap-2"
+                  >
+                    <FiBook className="w-4 h-4" />
+                    View Subjects
+                  </Button>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
@@ -387,6 +460,113 @@ const ShowTeachers = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Classes Modal */}
+      <Dialog open={classesModalOpen} onOpenChange={setClassesModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FiUsers className="w-5 h-5 text-blue-600" />
+              Classes - {selectedTeacherName}
+            </DialogTitle>
+            <DialogDescription>
+              List of classes where this teacher is assigned
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingClasses ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : selectedTeacherClasses.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <FiUsers className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No classes assigned yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {selectedTeacherClasses.map((cls) => (
+                <div
+                  key={cls.id}
+                  className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-semibold text-gray-900">
+                        {cls.class_name} {cls.section && `- ${cls.section}`}
+                      </h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Grade Level: {cls.grade_level}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                        {cls.subject_count} {cls.subject_count === 1 ? 'Subject' : 'Subjects'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Subjects Modal */}
+      <Dialog open={subjectsModalOpen} onOpenChange={setSubjectsModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FiBook className="w-5 h-5 text-green-600" />
+              Subjects - {selectedTeacherName}
+            </DialogTitle>
+            <DialogDescription>
+              List of subjects this teacher is teaching
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingSubjects ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+            </div>
+          ) : selectedTeacherSubjects.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <FiBook className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No subjects assigned yet</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {selectedTeacherSubjects.map((subject) => (
+                <div
+                  key={subject.id}
+                  className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900">
+                        {subject.subject_name}
+                      </h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Class: {subject.class_name} {subject.section && `- ${subject.section}`}
+                      </p>
+                      {subject.subject_code && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Code: {subject.subject_code}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                        Active
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

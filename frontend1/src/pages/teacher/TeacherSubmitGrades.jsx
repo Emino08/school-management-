@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useSelector } from 'react-redux';
 import axios from '../../redux/axiosConfig';
 import { toast } from 'sonner';
+import { FileDown, Upload } from 'lucide-react';
 
 const TeacherSubmitGrades = () => {
   const { currentUser } = useSelector((state) => state.user);
@@ -22,6 +23,7 @@ const TeacherSubmitGrades = () => {
   const [selectedExam, setSelectedExam] = useState('');
   const [gradesData, setGradesData] = useState({});
   const [loading, setLoading] = useState(false);
+  const [bulkFile, setBulkFile] = useState(null);
 
   // Fetch teacher's subjects
   useEffect(() => {
@@ -84,6 +86,71 @@ const TeacherSubmitGrades = () => {
     setSelectedSubject(val);
     const subj = subjects.find(s => String(s.id) === String(val));
     setSelectedClassId(subj?.class_id ? String(subj.class_id) : '');
+  };
+
+  const downloadTemplate = () => {
+    const header = "student_id,subject_id,exam_id,marks_obtained,test_score,exam_score,remarks";
+    const sample = "123,45,7,78,20,58,Good work";
+    const blob = new Blob([`${header}\n${sample}\n`], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "grade_submission_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkUpload = async () => {
+    if (!bulkFile) {
+      toast.error('Select a CSV file first');
+      return;
+    }
+    if (!selectedSubject || !selectedExam) {
+      toast.error('Select subject and exam before uploading');
+      return;
+    }
+    setLoading(true);
+    try {
+      const text = await bulkFile.text();
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const [headerLine, ...rows] = lines;
+      const headers = headerLine.split(',').map(h => h.trim());
+      const needed = ['student_id', 'marks_obtained'];
+      if (!needed.every(n => headers.includes(n))) {
+        throw new Error('CSV must include student_id and marks_obtained columns');
+      }
+      const idx = Object.fromEntries(headers.map((h, i) => [h, i]));
+      let success = 0;
+      let failed = 0;
+      for (const row of rows) {
+        const cols = row.split(',').map(c => c.trim());
+        if (cols.length < headers.length) continue;
+        const payload = {
+          student_id: Number(cols[idx['student_id']]),
+          subject_id: Number(selectedSubject),
+          exam_id: Number(selectedExam),
+          marks_obtained: Number(cols[idx['marks_obtained']]),
+        };
+        if (idx['test_score'] !== undefined && cols[idx['test_score']]) payload.test_score = Number(cols[idx['test_score']]);
+        if (idx['exam_score'] !== undefined && cols[idx['exam_score']]) payload.exam_score = Number(cols[idx['exam_score']]);
+        if (idx['remarks'] !== undefined && cols[idx['remarks']]) payload.remarks = cols[idx['remarks']];
+        try {
+          await axios.post(`${API_URL}/exams/results`, payload, {
+            headers: { 'Content-Type': 'application/json' }
+          });
+          success++;
+        } catch (e) {
+          failed++;
+        }
+      }
+      toast.success(`Upload complete: ${success} ok, ${failed} failed`);
+      // refresh students/grids
+      setSelectedSubject(selectedSubject);
+    } catch (error) {
+      toast.error(error.message || 'Bulk upload failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGradeChange = (studentId, field, value) => {
@@ -184,7 +251,32 @@ const TeacherSubmitGrades = () => {
     <div className="container mx-auto p-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Submit Grades</CardTitle>
+          <CardTitle className="text-2xl flex items-center justify-between">
+            <span>Submit Grades</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={downloadTemplate} className="flex items-center gap-1">
+                <FileDown className="w-4 h-4" /> Template
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-1"
+                onClick={() => document.getElementById('bulk-upload-input')?.click()}
+              >
+                <Upload className="w-4 h-4" /> Import CSV
+              </Button>
+              <input
+                id="bulk-upload-input"
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+              />
+              <Button size="sm" disabled={loading || !bulkFile} onClick={handleBulkUpload}>
+                {loading ? 'Uploading...' : 'Upload'}
+              </Button>
+            </div>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">

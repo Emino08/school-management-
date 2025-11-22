@@ -9,6 +9,7 @@ export default function useUpcomingForTeacher(limit = 1) {
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
+    if (!currentUser?.token) return;
     setLoading(true);
     setError(null);
     try {
@@ -30,4 +31,3 @@ export default function useUpcomingForTeacher(limit = 1) {
 
   return { upcoming, next: upcoming[0], loading, error, refresh };
 }
-

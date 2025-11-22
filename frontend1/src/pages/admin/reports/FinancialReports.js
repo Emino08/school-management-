@@ -94,7 +94,7 @@ const FinancialReports = () => {
             <CardContent className="p-6">
               <p className="text-sm text-gray-600">Expected Revenue</p>
               <p className="text-2xl font-bold text-blue-600">
-                ${parseFloat(financialOverview.expected_revenue).toLocaleString()}
+                SLE {parseFloat(financialOverview.expected_revenue).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -102,7 +102,7 @@ const FinancialReports = () => {
             <CardContent className="p-6">
               <p className="text-sm text-gray-600">Collected Revenue</p>
               <p className="text-2xl font-bold text-green-600">
-                ${parseFloat(financialOverview.collected_revenue).toLocaleString()}
+                SLE {parseFloat(financialOverview.collected_revenue).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -110,7 +110,7 @@ const FinancialReports = () => {
             <CardContent className="p-6">
               <p className="text-sm text-gray-600">Outstanding Balance</p>
               <p className="text-2xl font-bold text-red-600">
-                ${parseFloat(financialOverview.outstanding_balance).toLocaleString()}
+                SLE {parseFloat(financialOverview.outstanding_balance).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -157,12 +157,12 @@ const FinancialReports = () => {
                     <tr key={cls.class_id} className="border-b hover:bg-gray-50">
                       <td className="py-3 font-medium">{cls.class_name}</td>
                       <td className="text-right py-3">{cls.total_students}</td>
-                      <td className="text-right py-3">${parseFloat(cls.total_billed || 0).toLocaleString()}</td>
+                      <td className="text-right py-3">SLE {parseFloat(cls.total_billed || 0).toLocaleString()}</td>
                       <td className="text-right py-3 text-green-600">
-                        ${parseFloat(cls.total_collected || 0).toLocaleString()}
+                        SLE {parseFloat(cls.total_collected || 0).toLocaleString()}
                       </td>
                       <td className="text-right py-3 text-red-600">
-                        ${parseFloat(cls.total_outstanding || 0).toLocaleString()}
+                        SLE {parseFloat(cls.total_outstanding || 0).toLocaleString()}
                       </td>
                       <td className="text-right py-3 font-semibold">
                         {cls.collection_rate?.toFixed(1)}%

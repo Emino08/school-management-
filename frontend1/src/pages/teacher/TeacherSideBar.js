@@ -8,24 +8,32 @@ import {
   MdClass,
   MdAssignment,
   MdCheckCircle,
-  MdCalendarToday
+  MdCalendarToday,
+  MdListAlt,
+  MdShield,
+  MdAssessment,
+  MdMap
 } from "react-icons/md";
 import { useSelector } from "react-redux";
 
 const TeacherSideBar = () => {
   const { currentUser } = useSelector((state) => state.user);
-  console.log(currentUser, "currentUser");
   const location = useLocation();
 
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(path);
+  const isActive = (path) => {
+    if (!path) return false;
+    const normalized = path.endsWith('/') ? path.slice(0, -1) : path;
+    const current = location.pathname.endsWith('/') ? location.pathname.slice(0, -1) : location.pathname;
+    return current === normalized;
+  };
 
   return (
     <div className="flex flex-col h-full">
       <nav className="flex flex-col space-y-1 p-4">
         <Link
-          to="/"
+          to="//Teacher/dashboard"
           className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
-            isActive("/") || isActive("/Teacher/dashboard")
+            isActive("//Teacher/dashboard")
               ? "bg-primary text-primary-foreground"
               : "hover:bg-accent hover:text-accent-foreground"
           }`}
@@ -36,33 +44,20 @@ const TeacherSideBar = () => {
 
         <div className="pt-4">
           <h3 className="px-4 text-sm font-semibold text-muted-foreground mb-2">
-            Classes
+            Quick Actions
           </h3>
           <div className="space-y-1">
-            {currentUser.teachClasses?.map((classItem) => (
-              <Link
-                key={classItem._id}
-                to={`/Teacher/class/student/${classItem._id}`}
-                className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
-                  isActive(`/Teacher/class/student/${classItem._id}`)
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-accent hover:text-accent-foreground"
-                }`}
-              >
-                <MdClass className="w-5 h-5" />
-                <span>{classItem.sclassName}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="border-t my-2"></div>
-
-        <div className="pt-4">
-          <h3 className="px-4 text-sm font-semibold text-muted-foreground mb-2">
-            Academic
-          </h3>
-          <div className="space-y-1">
+            <Link
+              to="/Teacher/subjects"
+              className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
+                isActive("/Teacher/subjects")
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <MdListAlt className="w-5 h-5" />
+              <span>Subjects</span>
+            </Link>
             <Link
               to="/Teacher/attendance"
               className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
@@ -86,6 +81,28 @@ const TeacherSideBar = () => {
               <span>Submit Grades</span>
             </Link>
             <Link
+              to="/Teacher/result-management"
+              className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
+                isActive("/Teacher/result-management")
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <MdAssessment className="w-5 h-5" />
+              <span>Result Management</span>
+            </Link>
+            <Link
+              to="/Teacher/exam-officer"
+              className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
+                isActive("/Teacher/exam-officer")
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              <MdShield className="w-5 h-5" />
+              <span>Exam Officer</span>
+            </Link>
+            <Link
               to="/Teacher/timetable"
               className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
                 isActive("/Teacher/timetable")
@@ -98,6 +115,33 @@ const TeacherSideBar = () => {
             </Link>
           </div>
         </div>
+
+        {currentUser.teachClasses?.length > 0 && (
+          <>
+            <div className="border-t my-2"></div>
+            <div className="pt-4">
+              <h3 className="px-4 text-sm font-semibold text-muted-foreground mb-2">
+                My Classes
+              </h3>
+              <div className="space-y-1">
+                {currentUser.teachClasses?.map((classItem) => (
+                  <Link
+                    key={classItem._id}
+                    to={`/Teacher/class/student/${classItem._id}`}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
+                      isActive(`/Teacher/class/student/${classItem._id}`)
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    <MdClass className="w-5 h-5" />
+                    <span>{classItem.sclassName}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
         <Link
           to="/Teacher/complain"
@@ -129,6 +173,21 @@ const TeacherSideBar = () => {
               <MdAccountCircle className="w-5 h-5" />
               <span>Profile</span>
             </Link>
+            {(currentUser?.teacher?.is_town_master ||
+              currentUser?.role?.toLowerCase?.() === 'town_master' ||
+              currentUser?.roles?.includes?.('town_master')) && (
+              <Link
+                to="/Teacher/town-master"
+                className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${
+                  isActive("/Teacher/town-master")
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-accent hover:text-accent-foreground"
+                }`}
+              >
+                <MdMap className="w-5 h-5" />
+                <span>Town Master</span>
+              </Link>
+            )}
             <Link
               to="/logout"
               className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${

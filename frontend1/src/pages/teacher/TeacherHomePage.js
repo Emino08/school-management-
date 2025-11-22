@@ -19,7 +19,7 @@ import {
   getSubjectDetails,
 } from "../../redux/sclassRelated/sclassHandle";
 import { useDispatch, useSelector } from "react-redux";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "../../redux/axiosConfig";
 import useUpcomingForTeacher from "@/hooks/useUpcomingForTeacher";
 import useTeacherTodaySchedule from "@/hooks/useTeacherTodaySchedule";
@@ -39,7 +39,16 @@ const TeacherHomePage = () => {
   const classID = currentUser.teachSclass?._id;
   const subjectID = currentUser.teachSubject?._id;
 
+  const lastFetchKeyRef = useRef(null);
+
   useEffect(() => {
+    if (!currentUser) return;
+    const key = `${classID || "none"}|${subjectID || "none"}`;
+    if (lastFetchKeyRef.current === key) {
+      return; // avoid re-fetching with same params to prevent rerender loops
+    }
+    lastFetchKeyRef.current = key;
+
     if (subjectID) {
       dispatch(getSubjectDetails(subjectID, "Subject"));
     }
@@ -68,7 +77,7 @@ const TeacherHomePage = () => {
     };
 
     fetchDashboardStats();
-  }, [dispatch, subjectID, classID]);
+  }, [dispatch, subjectID, classID, currentUser]);
 
   const numberOfStudents =
     dashboardStats?.students ?? (sclassStudents && sclassStudents.length) ?? 0;
@@ -78,14 +87,12 @@ const TeacherHomePage = () => {
   const totalHours = dashboardStats?.hours ?? 0;
   const numberOfSubjects = dashboardStats?.subjects ?? 0;
   const { upcoming, next, loading: upcomingLoading, refresh: refreshUpcoming } = useUpcomingForTeacher(5);
-  const [now, setNow] = useState(new Date());
-  useEffect(() => { const id = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(id); }, []);
-  const nextStartsIn = (() => {
+  const nextStartsIn = useMemo(() => {
     if (!next) return '';
     const [sh, sm, ss] = (next.start_time || '00:00:00').split(':').map(Number);
     const start = new Date();
     start.setHours(sh||0, sm||0, ss||0, 0);
-    const diff = start - now;
+    const diff = start - Date.now();
     if (diff <= 0) return 'starting...';
     const totalSec = Math.floor(diff/1000);
     const h = Math.floor(totalSec / 3600);
@@ -94,7 +101,7 @@ const TeacherHomePage = () => {
     if (h>0) return `${h}h ${m}m ${s}s`;
     if (m>0) return `${m}m ${s}s`;
     return `${s}s`;
-  })();
+  }, [next]);
 
   const { entries: todaySchedule, loading: todayLoading, refresh: refreshToday } = useTeacherTodaySchedule();
 

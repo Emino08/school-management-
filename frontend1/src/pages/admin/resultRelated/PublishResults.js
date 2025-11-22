@@ -30,11 +30,31 @@ const PublishResults = () => {
   const [loading, setLoading] = useState(false);
   const [examStats, setExamStats] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [currentYear, setCurrentYear] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("currentAcademicYear")) || null;
+    } catch {
+      return null;
+    }
+  });
 
   const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
 
   useEffect(() => {
     fetchExams();
+  }, []);
+
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem("currentAcademicYear")) || null;
+        setCurrentYear(stored);
+      } catch {
+        setCurrentYear(null);
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   useEffect(() => {
@@ -44,6 +64,23 @@ const PublishResults = () => {
       setExamStats(null);
     }
   }, [selectedExam]);
+
+  useEffect(() => {
+    // Pre-fill publication date from the active academic year if available
+    if (!publicationDate && currentYear?.result_publication_date) {
+      const formatted = toDateInputValue(currentYear.result_publication_date);
+      if (formatted) setPublicationDate(formatted);
+    }
+  }, [currentYear, publicationDate]);
+
+  const toDateInputValue = (value) => {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+    // Ensure local date for the date input (strip timezone)
+    const tzOffset = parsed.getTimezoneOffset() * 60000;
+    return new Date(parsed.getTime() - tzOffset).toISOString().slice(0, 10);
+  };
 
   const fetchExams = async () => {
     try {
@@ -145,11 +182,6 @@ const PublishResults = () => {
     }
   };
 
-  const getMinDate = () => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  };
-
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
@@ -191,13 +223,17 @@ const PublishResults = () => {
                 type="date"
                 value={publicationDate}
                 onChange={(e) => setPublicationDate(e.target.value)}
-                min={getMinDate()}
                 className="pl-10"
                 required
               />
             </div>
             <p className="text-xs text-gray-500">
               Results will be visible to students on this date
+              {currentYear?.result_publication_date && (
+                <span className="block text-emerald-600">
+                  Default from academic year ({currentYear.year_name}): {toDateInputValue(currentYear.result_publication_date)}
+                </span>
+              )}
             </p>
           </div>
 

@@ -97,21 +97,21 @@ const PaymentManagement = () => {
           value={stats.totalCollected}
           icon={FiDollarSign}
           color="text-green-600"
-          prefix="$"
+          prefix="SLE "
         />
         <StatCard
           title="Total Outstanding"
           value={stats.totalOutstanding}
           icon={FiCreditCard}
           color="text-red-600"
-          prefix="$"
+          prefix="SLE "
         />
         <StatCard
           title="Recent Payments (30d)"
           value={stats.recentPayments}
           icon={FiDollarSign}
           color="text-blue-600"
-          prefix="$"
+          prefix="SLE "
         />
         <StatCard
           title="Total Invoices"

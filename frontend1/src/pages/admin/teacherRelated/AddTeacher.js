@@ -43,11 +43,14 @@ const AddTeacher = () => {
   const { subjectDetails } = useSelector((state) => state.sclass);
 
   const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [checked, setChecked] = useState(false);
   const [isExamOfficer, setIsExamOfficer] = useState(false);
   const [canApproveResults, setCanApproveResults] = useState(false);
+  const [isTownMaster, setIsTownMaster] = useState(false);
   
   // Class Master fields
   const [isClassMaster, setIsClassMaster] = useState(false);
@@ -99,7 +102,9 @@ const AddTeacher = () => {
     subjectDetails.sclassName._id;
 
   const fields = {
-    name,
+    name: name || `${firstName} ${lastName}`.trim(),
+    first_name: firstName,
+    last_name: lastName,
     email,
     password,
     role,
@@ -110,6 +115,7 @@ const AddTeacher = () => {
     can_approve_results: canApproveResults,
     is_class_master: isClassMaster,
     class_master_of: isClassMaster ? classMasterOf : null,
+    is_town_master: isTownMaster,
     phone,
     address,
     qualification,
@@ -204,17 +210,32 @@ const AddTeacher = () => {
               </div>
             ) : (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Enter teacher's name..."
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    autoComplete="name"
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">First Name *</Label>
+                    <Input
+                      id="firstName"
+                      type="text"
+                      placeholder="Enter first name..."
+                      value={firstName}
+                      onChange={(event) => setFirstName(event.target.value)}
+                      autoComplete="given-name"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Last Name *</Label>
+                    <Input
+                      id="lastName"
+                      type="text"
+                      placeholder="Enter last name..."
+                      value={lastName}
+                      onChange={(event) => setLastName(event.target.value)}
+                      autoComplete="family-name"
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -365,6 +386,24 @@ const AddTeacher = () => {
 
                   <p className="text-xs text-blue-700">
                     Exam officers review and approve grades uploaded by teachers before publication.
+                  </p>
+                </div>
+
+                {/* Town Master Options */}
+                <div className="space-y-3 p-4 bg-indigo-50 rounded-md border border-indigo-200">
+                  <h4 className="font-semibold text-sm text-indigo-900">Town Master Designation (Optional)</h4>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="isTownMaster"
+                      checked={isTownMaster}
+                      onCheckedChange={(value) => setIsTownMaster(Boolean(value))}
+                    />
+                    <Label htmlFor="isTownMaster" className="cursor-pointer text-sm">
+                      Mark as Town Master
+                    </Label>
+                  </div>
+                  <p className="text-xs text-indigo-700">
+                    Town masters can add and manage students in their towns/blocks from the Town Master workspace.
                   </p>
                 </div>
               </>

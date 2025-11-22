@@ -24,11 +24,31 @@ const ViewResults = () => {
   const [loading, setLoading] = useState(false);
   const [publicationInfo, setPublicationInfo] = useState(null);
   const [isPublished, setIsPublished] = useState(false);
+  const [currentYear, setCurrentYear] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("currentAcademicYear")) || null;
+    } catch {
+      return null;
+    }
+  });
 
   const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api";
 
   useEffect(() => {
     fetchExams();
+  }, []);
+
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem("currentAcademicYear")) || null;
+        setCurrentYear(stored);
+      } catch {
+        setCurrentYear(null);
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   useEffect(() => {
@@ -67,6 +87,27 @@ const ViewResults = () => {
       );
 
       if (response.data.success) {
+        const releaseDate =
+          response.data.publication_date ||
+          currentYear?.result_publication_date ||
+          null;
+
+        // If a release date exists and we're before it, hide results even if API says success
+        if (releaseDate) {
+          const daysUntil = calculateDaysUntil(releaseDate);
+          if (daysUntil !== null && daysUntil > 0) {
+            setIsPublished(false);
+            setPublicationInfo({
+              message: "Results will be available on the publication date configured for this academic year.",
+              publication_date: releaseDate,
+            });
+            setResults([]);
+            setSummary(null);
+            setLoading(false);
+            return;
+          }
+        }
+
         setResults(response.data.results || []);
         setSummary(response.data.summary);
         setIsPublished(response.data.is_published);
@@ -78,7 +119,10 @@ const ViewResults = () => {
         setIsPublished(false);
         setPublicationInfo({
           message: error.response.data.message,
-          publication_date: error.response.data.publication_date
+          publication_date:
+            error.response.data.publication_date ||
+            currentYear?.result_publication_date ||
+            null
         });
         setResults([]);
         setSummary(null);

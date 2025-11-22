@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import BackButton from '@/components/BackButton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -91,15 +92,8 @@ const CreateMedicalRecord = () => {
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center">
-            <button
-              onClick={() => navigate('/medical/dashboard')}
-              className="mr-4 p-2 hover:bg-gray-100 rounded-full"
-            >
-              <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </button>
+          <div className="flex items-center space-x-4">
+            <BackButton to="/medical/dashboard" label="Back to Dashboard" variant="outline" className="mb-0" />
             <h1 className="text-xl font-bold text-gray-900">Create Medical Record</h1>
           </div>
         </div>

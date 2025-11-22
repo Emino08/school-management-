@@ -27,6 +27,8 @@ export const loginUser = (fields, role) => async (dispatch) => {
         const endpoint = `${import.meta.env.VITE_API_BASE_URL}/${roleMap[role]}/login`;
         const result = await axios.post(endpoint, fields, {
             headers: { 'Content-Type': 'application/json' },
+            // Avoid global 401 interceptor redirecting to "/" on deliberate auth failures
+            skipAuthRedirect: true,
         });
         const data = result.data || {};
         // Normalize payloads across roles so authSuccess can set currentRole
@@ -48,7 +50,12 @@ export const loginUser = (fields, role) => async (dispatch) => {
             dispatch(authFailed(data.message));
         }
     } catch (error) {
-        dispatch(authError(error));
+        const message = error?.response?.data?.message;
+        if (message) {
+            dispatch(authFailed(message));
+        } else {
+            dispatch(authError(error));
+        }
     }
 };
 

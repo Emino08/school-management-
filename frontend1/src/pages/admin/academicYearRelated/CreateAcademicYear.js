@@ -113,6 +113,7 @@ const CreateAcademicYear = () => {
         } else if (gradeRanges.length > 0) {
           await createCustomGrades(result.academic_year_id);
         }
+        await syncFeeStructuresFromYear(result.academic_year_id || result?.id || result?.academic_year?.id);
         
         // Refresh the list
         dispatch(getAllAcademicYears());
@@ -187,6 +188,19 @@ const CreateAcademicYear = () => {
       toast.success("Custom grading system configured successfully!");
     } catch (error) {
       toast.warning("Academic year created but failed to setup custom grades. You can set them up manually.");
+    }
+  };
+
+  const syncFeeStructuresFromYear = async (academicYearId) => {
+    if (!academicYearId) return;
+    try {
+      await axios.post(
+        `${API_URL}/fee-structures/import-from-year`,
+        { academic_year_id: academicYearId }
+      );
+      toast.success("Fee structures synced to the new academic year");
+    } catch (error) {
+      toast.warning("Academic year created, but fee structures could not sync automatically. Please re-open the Fee Structures tab to retry.");
     }
   };
 
@@ -521,7 +535,7 @@ const CreateAcademicYear = () => {
                 <div className="flex justify-between items-center">
                   <span className="font-semibold text-green-900">Total Annual Fee:</span>
                   <span className="text-2xl font-bold text-green-700">
-                    ${totalFees().toFixed(2)}
+                    SLE {totalFees().toFixed(2)}
                   </span>
                 </div>
               </div>

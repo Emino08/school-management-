@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
+import BackButton from '@/components/BackButton';
 import {
   FiSettings,
   FiSave,
@@ -98,6 +99,7 @@ const SystemSettings = () => {
       setLoading(true);
       const response = await axios.get('/admin/settings', {
         skipAuthRedirect: true,
+        headers: { Authorization: `Bearer ${currentUser.token}` },
       });
 
       if (response.data.success) {
@@ -111,6 +113,7 @@ const SystemSettings = () => {
     } catch (error) {
       if (error.response?.status === 401) {
         toast.error('Your session has expired. Please log in again.');
+        localStorage.removeItem('user');
       } else {
         console.error('Error fetching settings:', error);
         toast.error('Failed to load settings');
@@ -133,7 +136,10 @@ const SystemSettings = () => {
           type: settingsType,
           settings: data,
         },
-        { skipAuthRedirect: true }
+        {
+          skipAuthRedirect: true,
+          headers: { Authorization: `Bearer ${currentUser.token}` },
+        }
       );
 
       if (response.data.success) {
@@ -145,6 +151,7 @@ const SystemSettings = () => {
     } catch (error) {
       if (error.response?.status === 401) {
         toast.error('Your session has expired. Please log in again.');
+        localStorage.removeItem('user');
       } else {
         console.error('Error saving settings:', error);
         toast.error('Failed to save settings');
@@ -166,7 +173,7 @@ const SystemSettings = () => {
       const response = await axios.post(
         '/admin/settings/backup',
         {},
-        { responseType: 'blob', skipAuthRedirect: true }
+        { responseType: 'blob', skipAuthRedirect: true, headers: { Authorization: `Bearer ${currentUser.token}` } }
       );
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -182,6 +189,7 @@ const SystemSettings = () => {
       if (toastId) toast.dismiss(toastId);
       if (error.response?.status === 401) {
         toast.error('Your session has expired. Please log in again.');
+        localStorage.removeItem('user');
       } else {
         console.error('Error creating backup:', error);
         toast.error('Failed to create backup');
@@ -198,7 +206,7 @@ const SystemSettings = () => {
       const response = await axios.post(
         '/admin/cache/clear',
         {},
-        { skipAuthRedirect: true }
+        { skipAuthRedirect: true, headers: { Authorization: `Bearer ${currentUser.token}` } }
       );
 
       if (response.data.success) {
@@ -209,6 +217,7 @@ const SystemSettings = () => {
     } catch (error) {
       if (error.response?.status === 401) {
         toast.error('Your session has expired. Please log in again.');
+        localStorage.removeItem('user');
       } else {
         console.error('Error clearing cache:', error);
         toast.error('Failed to clear cache');
@@ -218,6 +227,9 @@ const SystemSettings = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Back Button */}
+      <BackButton to="/Admin/dashboard" label="Back to Dashboard" />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

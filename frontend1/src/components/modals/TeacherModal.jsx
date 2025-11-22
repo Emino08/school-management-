@@ -25,7 +25,8 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
   const { currentUser, status, response } = useSelector((state) => state.user);
   
   const [formData, setFormData] = useState({
-    name: '',
+    first_name: '',
+    last_name: '',
     email: '',
     password: '',
     phone: '',
@@ -33,6 +34,7 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
     teachSubjects: [],
     isClassMaster: false,
     isExamOfficer: false,
+    isTownMaster: false,
   });
   const [loading, setLoading] = useState(false);
   const [classes, setClasses] = useState([]);
@@ -163,8 +165,9 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
       role: 'Teacher',
       teachSubjects: formData.teachSubjects, // Array of subject IDs
       teachSclass: formData.teachSclass,
-      isClassMaster: formData.isClassMaster,
-      isExamOfficer: formData.isExamOfficer,
+      is_class_master: formData.isClassMaster,
+      is_exam_officer: formData.isExamOfficer,
+      is_town_master: formData.isTownMaster,
       adminID,
     };
 
@@ -183,6 +186,7 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
       teachSubjects: [],
       isClassMaster: false,
       isExamOfficer: false,
+      isTownMaster: false,
     });
     setLoading(false);
     onOpenChange(false);
@@ -267,16 +271,31 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="name" className="text-sm font-semibold flex items-center gap-1.5">
+              <div className="space-y-2">
+                <Label htmlFor="first_name" className="text-sm font-semibold flex items-center gap-1.5">
                   <MdPerson className="w-4 h-4 text-orange-600" />
-                  Full Name <span className="text-red-500">*</span>
+                  First Name <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  id="name"
-                  placeholder="e.g., Jane Smith"
-                  value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
+                  id="first_name"
+                  placeholder="e.g., Jane"
+                  value={formData.first_name}
+                  onChange={(e) => handleChange('first_name', e.target.value)}
+                  required
+                  className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="last_name" className="text-sm font-semibold flex items-center gap-1.5">
+                  <MdPerson className="w-4 h-4 text-orange-600" />
+                  Last Name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="last_name"
+                  placeholder="e.g., Smith"
+                  value={formData.last_name}
+                  onChange={(e) => handleChange('last_name', e.target.value)}
                   required
                   className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                 />
@@ -530,6 +549,23 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">
                     Manages exams and grading system
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3 p-4 border-2 border-gray-200 rounded-xl hover:border-orange-300 transition-colors">
+                <Checkbox
+                  id="isTownMaster"
+                  checked={formData.isTownMaster}
+                  onCheckedChange={(checked) => handleChange('isTownMaster', checked)}
+                  className="w-5 h-5"
+                />
+                <div className="flex-1" onClick={() => handleChange('isTownMaster', !formData.isTownMaster)} style={{cursor: 'pointer'}}>
+                  <div className="text-sm font-semibold">
+                    Town Master
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Can manage students in assigned towns/blocks.
                   </p>
                 </div>
               </div>

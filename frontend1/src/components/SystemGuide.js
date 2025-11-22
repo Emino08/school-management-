@@ -13,7 +13,8 @@ import {
   MdNotifications,
   MdChevronRight,
   MdCheckCircle,
-  MdInfo
+  MdInfo,
+  MdWarning
 } from 'react-icons/md';
 import {
   Collapsible,
@@ -55,14 +56,14 @@ const SystemGuide = () => {
       color: 'bg-blue-600',
       description: 'Organize students into classes',
       details: [
-        'Go to Classes section',
+        'Go to Classes Management section',
         'Add classes with names (e.g., "Grade 10A")',
         'Set grade levels for student promotion',
         'Classes group students by year/section',
         'Each class can have multiple subjects'
       ],
       importance: 'critical',
-      route: '/Admin/classes'
+      route: '/Admin/classes-management'
     },
     {
       id: 'subjects',
@@ -71,14 +72,14 @@ const SystemGuide = () => {
       color: 'bg-green-600',
       description: 'Define subjects for each class',
       details: [
-        'Navigate to Subjects section',
+        'Navigate to Subjects Management',
         'Select a class to add subjects',
         'Add subject name and code',
         'Set number of sessions/periods',
         'Subjects are linked to specific classes'
       ],
       importance: 'critical',
-      route: '/Admin/subjects'
+      route: '/Admin/subjects-management'
     },
     {
       id: 'teachers',
@@ -87,14 +88,14 @@ const SystemGuide = () => {
       color: 'bg-orange-600',
       description: 'Add teachers to the system',
       details: [
-        'Go to Teachers section',
-        'Add teacher details (name, email, etc.)',
+        'Go to Teachers Management',
+        'Add teacher details (first name, last name, email)',
         'Assign subjects to teachers',
-        'Teachers can manage assigned subjects',
-        'Track teacher attendance and performance'
+        'Set teacher as class teacher (optional)',
+        'Teachers can manage assigned subjects and attendance'
       ],
       importance: 'high',
-      route: '/Admin/teachers'
+      route: '/Admin/teachers-management'
     },
     {
       id: 'students',
@@ -103,78 +104,260 @@ const SystemGuide = () => {
       color: 'bg-pink-600',
       description: 'Add students to classes',
       details: [
-        'Navigate to Students section',
+        'Navigate to Students Management',
         'Select a class for enrollment',
-        'Add student details (name, ID number, etc.)',
-        'Students are enrolled in the current academic year',
-        'Manage student records, attendance, and grades'
+        'Add student details (first name, last name, ID)',
+        'Assign to Town Master/House (optional)',
+        'Students enrolled in current academic year'
       ],
       importance: 'high',
-      route: '/Admin/students'
+      route: '/Admin/students-management'
+    },
+    {
+      id: 'town-master',
+      title: '6. Configure Town Master/Houses',
+      icon: MdSchool,
+      color: 'bg-indigo-600',
+      description: 'Set up house system for student organization',
+      details: [
+        'Navigate to Town Master section',
+        'Create houses (e.g., Red, Blue, Green)',
+        'Add colors and descriptions',
+        'Assign students to houses',
+        'Track house points and competitions'
+      ],
+      importance: 'medium',
+      route: '/Admin/town-master'
+    },
+    {
+      id: 'grading',
+      title: '7. Configure Grading System',
+      icon: MdAssignment,
+      color: 'bg-teal-600',
+      description: 'Set up grade scales and result formats',
+      details: [
+        'Go to Grading System section',
+        'Define grade boundaries (A, B, C, etc.)',
+        'Set pass/fail marks',
+        'Configure result calculation methods',
+        'Customize grade descriptions'
+      ],
+      importance: 'high',
+      route: '/Admin/grading-system'
     },
     {
       id: 'fees',
-      title: '6. Configure Fees',
+      title: '8. Configure Fees Structure',
       icon: MdAttachMoney,
       color: 'bg-yellow-600',
-      description: 'Set up fee structure',
+      description: 'Set up fee structure and payment tracking',
       details: [
-        'Go to Fees section',
+        'Go to Fees Structure section',
         'Define fee amounts per class/term',
-        'Record student payments',
-        'Track payment status',
-        'Generate fee reports'
+        'Create payment categories',
+        'Set payment deadlines',
+        'Track payment status and history'
       ],
-      importance: 'medium',
+      importance: 'high',
       route: '/Admin/fees'
     },
     {
-      id: 'attendance',
-      title: '7. Record Attendance',
-      icon: MdCheckCircle,
-      color: 'bg-teal-600',
-      description: 'Track student attendance',
+      id: 'result-pins',
+      title: '9. Generate Result PINs',
+      icon: MdAssignment,
+      color: 'bg-purple-500',
+      description: 'Create access codes for result checking',
       details: [
-        'Access student profiles',
-        'Mark daily attendance',
-        'View attendance statistics',
-        'Generate attendance reports',
-        'Monitor attendance trends'
+        'Navigate to Result PINs section',
+        'Generate PIN batches',
+        'Assign PINs to students',
+        'Track PIN usage and validity',
+        'Students use PINs to view results'
       ],
       importance: 'medium',
-      route: '/Admin/students'
+      route: '/Admin/result-pins'
+    },
+    {
+      id: 'timetable',
+      title: '10. Create Timetable',
+      icon: MdCalendarToday,
+      color: 'bg-blue-500',
+      description: 'Schedule classes and periods',
+      details: [
+        'Go to Timetable section',
+        'Define school periods/time slots',
+        'Assign subjects to time slots',
+        'Link teachers to periods',
+        'Generate class-wise timetables'
+      ],
+      importance: 'medium',
+      route: '/Admin/timetable'
+    },
+    {
+      id: 'attendance',
+      title: '11. Track Attendance',
+      icon: MdCheckCircle,
+      color: 'bg-green-500',
+      description: 'Monitor daily student attendance',
+      details: [
+        'Access Attendance Management',
+        'Select class and date',
+        'Mark students present/absent',
+        'View attendance statistics',
+        'Generate attendance reports',
+        'Notify parents of absences'
+      ],
+      importance: 'high',
+      route: '/Admin/attendance'
     },
     {
       id: 'exams',
-      title: '8. Manage Exams & Grades',
+      title: '12. Manage Exams & Results',
       icon: MdAssignment,
-      color: 'bg-indigo-600',
-      description: 'Create exams and record results',
+      color: 'bg-red-600',
+      description: 'Record and publish exam results',
       details: [
-        'Create exam schedules',
-        'Record student exam marks',
-        'Calculate grades automatically',
+        'Teachers enter exam marks',
+        'Results automatically calculated',
         'Generate report cards',
-        'Track academic performance'
+        'Publish results to students',
+        'Track academic performance trends'
+      ],
+      importance: 'high',
+      route: '/Admin/all-results'
+    },
+    {
+      id: 'payments',
+      title: '13. Manage Payments',
+      icon: MdAttachMoney,
+      color: 'bg-emerald-600',
+      description: 'Track and manage fee payments',
+      details: [
+        'Go to Payments & Finance',
+        'Record student payments',
+        'Generate payment receipts',
+        'Track outstanding fees',
+        'Export payment reports',
+        'View payment history by student'
       ],
       importance: 'medium',
-      route: '/Admin/students'
+      route: '/Admin/payments'
     },
     {
       id: 'notices',
-      title: '9. Post Notices',
+      title: '14. Post Notices & Announcements',
       icon: MdNotifications,
-      color: 'bg-red-600',
-      description: 'Communicate with students/staff',
+      color: 'bg-orange-500',
+      description: 'Communicate with students and staff',
       details: [
         'Navigate to Notices section',
         'Create announcements',
-        'Target specific audiences',
-        'View notice history',
-        'Keep everyone informed'
+        'Target specific classes or all',
+        'Set notice priority levels',
+        'View notice history and reach'
+      ],
+      importance: 'medium',
+      route: '/Admin/notices'
+    },
+    {
+      id: 'complaints',
+      title: '15. Handle Complaints',
+      icon: MdWarning,
+      color: 'bg-red-500',
+      description: 'Manage student and parent complaints',
+      details: [
+        'Go to Complaints section',
+        'View submitted complaints',
+        'Respond to complaints',
+        'Track resolution status',
+        'Maintain complaint history'
+      ],
+      importance: 'medium',
+      route: '/Admin/complains'
+    },
+    {
+      id: 'users',
+      title: '16. Manage User Accounts',
+      icon: MdPeople,
+      color: 'bg-slate-600',
+      description: 'Control user access and roles',
+      details: [
+        'Navigate to User Management',
+        'Create admin accounts',
+        'Manage teacher accounts',
+        'Set user permissions',
+        'Activate/deactivate accounts',
+        'Reset user passwords'
+      ],
+      importance: 'high',
+      route: '/Admin/users'
+    },
+    {
+      id: 'reports',
+      title: '17. Generate Reports & Analytics',
+      icon: MdInfo,
+      color: 'bg-cyan-600',
+      description: 'Access comprehensive reports',
+      details: [
+        'Go to Reports section',
+        'Generate attendance reports',
+        'View financial summaries',
+        'Export academic performance data',
+        'Analyze trends and statistics',
+        'Download reports as PDF/Excel'
+      ],
+      importance: 'medium',
+      route: '/Admin/reports'
+    },
+    {
+      id: 'settings',
+      title: '18. Configure System Settings',
+      icon: MdInfo,
+      color: 'bg-gray-600',
+      description: 'Customize system configuration',
+      details: [
+        'Navigate to System Settings',
+        'Update school information',
+        'Configure email settings (SMTP)',
+        'Set notification preferences',
+        'Customize system behavior',
+        'Manage security settings'
+      ],
+      importance: 'high',
+      route: '/Admin/settings'
+    },
+    {
+      id: 'notifications',
+      title: '19. Monitor Notifications',
+      icon: MdNotifications,
+      color: 'bg-blue-400',
+      description: 'Stay updated with system alerts',
+      details: [
+        'Check notification center regularly',
+        'View pending actions',
+        'Respond to urgent alerts',
+        'Manage notification settings',
+        'Mark notifications as read'
+      ],
+      importance: 'medium',
+      route: '/Admin/notifications'
+    },
+    {
+      id: 'activity-logs',
+      title: '20. Review Activity Logs',
+      icon: MdInfo,
+      color: 'bg-violet-600',
+      description: 'Track system usage and changes',
+      details: [
+        'Go to Activity Logs',
+        'Monitor user actions',
+        'Track data changes',
+        'Audit system access',
+        'Export logs for compliance',
+        'Identify security issues'
       ],
       importance: 'low',
-      route: '/Admin/notices'
+      route: '/Admin/activity-logs'
     }
   ];
 
@@ -188,12 +371,60 @@ const SystemGuide = () => {
       description: 'Easily promote students to the next grade level at the end of each academic year using the grade level system.'
     },
     {
-      title: 'Comprehensive Reporting',
-      description: 'Generate reports for attendance, fees, exam results, and more with built-in filtering and export options.'
+      title: 'Town Master/House System',
+      description: 'Organize students into houses for sports, competitions, and extracurricular activities with point tracking.'
     },
     {
-      title: 'Role-Based Access',
-      description: 'Different interfaces for Admin, Teachers, and Students with appropriate permissions and access levels.'
+      title: 'Comprehensive Grading',
+      description: 'Flexible grading system with customizable grade boundaries, automatic calculation, and multiple result formats.'
+    },
+    {
+      title: 'Timetable Management',
+      description: 'Create and manage class timetables with period scheduling, teacher assignments, and conflict detection.'
+    },
+    {
+      title: 'Result PIN System',
+      description: 'Secure result access through PIN codes ensuring only authorized students can view their results.'
+    },
+    {
+      title: 'Payment Tracking',
+      description: 'Complete financial management with fee structure, payment recording, receipt generation, and outstanding tracking.'
+    },
+    {
+      title: 'Real-time Notifications',
+      description: 'Instant alerts for attendance, payments, results, complaints, and system updates across all user roles.'
+    },
+    {
+      title: 'Comprehensive Reports',
+      description: 'Generate detailed reports for attendance, fees, exam results, and more with built-in filtering and export options.'
+    },
+    {
+      title: 'Role-Based Access Control',
+      description: 'Different interfaces for Admin, Teachers, Students, Parents, Medical Staff, Finance, and Exam Officers with appropriate permissions.'
+    },
+    {
+      title: 'User Management',
+      description: 'Centralized user account management with role assignments, permission controls, and account activation/deactivation.'
+    },
+    {
+      title: 'Activity Logging',
+      description: 'Comprehensive audit trail of all system activities for compliance, security, and troubleshooting.'
+    },
+    {
+      title: 'Email Integration',
+      description: 'Configurable SMTP settings for sending notifications, password resets, and system alerts via email.'
+    },
+    {
+      title: 'Complaint Management',
+      description: 'Structured system for receiving, tracking, and resolving student and parent complaints with response tracking.'
+    },
+    {
+      title: 'Attendance Management',
+      description: 'Daily attendance tracking with statistics, reports, and parent notifications for absences.'
+    },
+    {
+      title: 'System Customization',
+      description: 'Flexible settings for school information, branding, notification preferences, and system behavior.'
     }
   ];
 
@@ -277,18 +508,61 @@ const SystemGuide = () => {
       {/* Key Features */}
       <Card>
         <CardHeader>
-          <CardTitle>Key Features</CardTitle>
-          <CardDescription>Understanding how the system works</CardDescription>
+          <CardTitle className="text-xl">Key System Features</CardTitle>
+          <CardDescription>Understanding the powerful capabilities of the system</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {keyFeatures.map((feature, index) => (
-              <div key={index} className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <h4 className="font-semibold text-blue-900 mb-2">{feature.title}</h4>
-                <p className="text-sm text-blue-700">{feature.description}</p>
+              <div key={index} className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200 hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-2">
+                  <MdCheckCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-semibold text-blue-900 mb-1">{feature.title}</h4>
+                    <p className="text-sm text-blue-700 leading-relaxed">{feature.description}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick Tips Card */}
+      <Card className="bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2 text-amber-900">
+            <MdInfo className="h-5 w-5" />
+            Quick Tips for Success
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2 text-sm text-amber-900">
+            <li className="flex items-start gap-2">
+              <MdCheckCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <span><strong>Start with Academic Year:</strong> Always set up the academic year first as all data depends on it</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <MdCheckCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <span><strong>Configure Grading Early:</strong> Set up your grading system before recording any exam results</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <MdCheckCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <span><strong>Use Town Master:</strong> Assign students to houses for better organization and inter-house competitions</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <MdCheckCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <span><strong>Regular Backups:</strong> Export reports and data regularly for backup and compliance</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <MdCheckCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <span><strong>Configure Email Settings:</strong> Set up SMTP in System Settings to enable password resets and notifications</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <MdCheckCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <span><strong>Monitor Activity Logs:</strong> Check activity logs regularly for security and compliance auditing</span>
+            </li>
+          </ul>
         </CardContent>
       </Card>
     </div>

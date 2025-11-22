@@ -3,16 +3,25 @@
 namespace App\Controllers;
 
 use App\Config\Database;
+use App\Utils\CurrencyFormatter;
 use PDO;
 use PDOException;
 
 class ReportsController
 {
     private $db;
+    private $currencyCode;
+    private $currencySymbol;
 
     public function __construct()
     {
         $this->db = Database::getInstance()->getConnection();
+        
+        // Get currency from settings
+        $stmt = $this->db->query("SELECT currency_code, currency_symbol FROM school_settings LIMIT 1");
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        $this->currencyCode = $settings['currency_code'] ?? 'SLE';
+        $this->currencySymbol = $settings['currency_symbol'] ?? 'Le';
     }
 
     // ======= PERFORMANCE REPORTS =======
@@ -411,10 +420,17 @@ class ReportsController
 
             $response->getBody()->write(json_encode([
                 'success' => true,
+                'currency' => [
+                    'code' => $this->currencyCode,
+                    'symbol' => $this->currencySymbol
+                ],
                 'overview' => [
-                    'expected_revenue' => $expectedRevenue,
-                    'collected_revenue' => $collectedRevenue,
-                    'outstanding_balance' => $outstandingBalance,
+                    'expected_revenue' => (float)$expectedRevenue,
+                    'expected_revenue_formatted' => CurrencyFormatter::format($expectedRevenue, $this->currencyCode),
+                    'collected_revenue' => (float)$collectedRevenue,
+                    'collected_revenue_formatted' => CurrencyFormatter::format($collectedRevenue, $this->currencyCode),
+                    'outstanding_balance' => (float)$outstandingBalance,
+                    'outstanding_balance_formatted' => CurrencyFormatter::format($outstandingBalance, $this->currencyCode),
                     'collection_rate' => $expectedRevenue > 0 ? round(($collectedRevenue / $expectedRevenue) * 100, 2) : 0,
                     'payment_methods' => $paymentMethods,
                     'invoice_status' => $invoiceStatus
@@ -552,6 +568,22 @@ class ReportsController
             $stmtStudents = $this->db->query("SELECT COUNT(*) FROM students");
             $totalStudents = $stmtStudents->fetchColumn();
 
+            // Active students (status = 'active')
+            $stmtActiveStudents = $this->db->query("SELECT COUNT(*) FROM students WHERE status = 'active'");
+            $activeStudents = $stmtActiveStudents->fetchColumn();
+
+            // Inactive students (status != 'active')
+            $stmtInactiveStudents = $this->db->query("SELECT COUNT(*) FROM students WHERE status != 'active' OR status IS NULL");
+            $inactiveStudents = $stmtInactiveStudents->fetchColumn();
+
+            // Male students
+            $stmtMaleStudents = $this->db->query("SELECT COUNT(*) FROM students WHERE gender = 'Male'");
+            $maleStudents = $stmtMaleStudents->fetchColumn();
+
+            // Female students
+            $stmtFemaleStudents = $this->db->query("SELECT COUNT(*) FROM students WHERE gender = 'Female'");
+            $femaleStudents = $stmtFemaleStudents->fetchColumn();
+
             // Total teachers
             $stmtTeachers = $this->db->query("SELECT COUNT(*) FROM teachers");
             $totalTeachers = $stmtTeachers->fetchColumn();
@@ -559,6 +591,10 @@ class ReportsController
             // Total classes
             $stmtClasses = $this->db->query("SELECT COUNT(*) FROM classes");
             $totalClasses = $stmtClasses->fetchColumn();
+
+            // Total subjects
+            $stmtSubjects = $this->db->query("SELECT COUNT(*) FROM subjects");
+            $totalSubjects = $stmtSubjects->fetchColumn();
 
             // Recent payments
             $stmtPayments = $this->db->prepare("
@@ -582,18 +618,23 @@ class ReportsController
             $avgAttendance = $stmtAttendance->fetchColumn();
 
             // Pending complaints
-            $stmtComplaints = $this->db->query("SELECT COUNT(*) FROM complaints");
+            $stmtComplaints = $this->db->query("SELECT COUNT(*) FROM complaints WHERE status = 'pending' OR status IS NULL");
             $pendingComplaints = $stmtComplaints->fetchColumn();
 
             return [
                 'success' => true,
                 'stats' => [
-                    'total_students' => $totalStudents,
-                    'total_teachers' => $totalTeachers,
-                    'total_classes' => $totalClasses,
-                    'recent_payments' => $recentPayments ?? 0,
-                    'average_attendance' => $avgAttendance ?? 0,
-                    'pending_complaints' => $pendingComplaints
+                    'total_students' => (int)$totalStudents,
+                    'active_students' => (int)$activeStudents,
+                    'inactive_students' => (int)$inactiveStudents,
+                    'male_students' => (int)$maleStudents,
+                    'female_students' => (int)$femaleStudents,
+                    'total_teachers' => (int)$totalTeachers,
+                    'total_classes' => (int)$totalClasses,
+                    'total_subjects' => (int)$totalSubjects,
+                    'recent_payments' => (float)($recentPayments ?? 0),
+                    'average_attendance' => (float)($avgAttendance ?? 0),
+                    'pending_complaints' => (int)$pendingComplaints
                 ]
             ];
         } catch (PDOException $e) {
@@ -755,10 +796,17 @@ class ReportsController
 
             $payload = [
                 'success' => true,
+                'currency' => [
+                    'code' => $this->currencyCode,
+                    'symbol' => $this->currencySymbol
+                ],
                 'data' => [
                     'expected_revenue' => $expectedRevenue,
+                    'expected_revenue_formatted' => CurrencyFormatter::format($expectedRevenue, $this->currencyCode),
                     'collected_revenue' => $collectedRevenue,
+                    'collected_revenue_formatted' => CurrencyFormatter::format($collectedRevenue, $this->currencyCode),
                     'outstanding_balance' => $outstandingBalance,
+                    'outstanding_balance_formatted' => CurrencyFormatter::format($outstandingBalance, $this->currencyCode),
                     'collection_rate' => $expectedRevenue > 0 ? round(($collectedRevenue / $expectedRevenue) * 100, 2) : 0,
                     'payment_methods' => $paymentMethods,
                     'invoice_status' => $invoiceStatus

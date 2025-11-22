@@ -196,7 +196,7 @@ const PaymentHistory = () => {
               Showing {filteredPayments.length} of {payments.length} payments
             </p>
             <p className="text-lg font-bold text-green-600">
-              Total: ${totalAmount.toFixed(2)}
+              Total: SLE {totalAmount.toFixed(2)}
             </p>
           </div>
         </CardContent>
@@ -261,7 +261,7 @@ const PaymentHistory = () => {
                         {payment.fee_name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
-                        ${parseFloat(payment.amount_paid).toFixed(2)}
+                        SLE {parseFloat(payment.amount_paid).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(payment.payment_date).toLocaleDateString()}

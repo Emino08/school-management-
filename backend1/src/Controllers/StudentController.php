@@ -237,17 +237,42 @@ class StudentController
     public function getAllStudents(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $query = $request->getQueryParams();
+        $search = trim($query['search'] ?? '');
+        $limit = isset($query['limit']) ? (int)$query['limit'] : null;
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $adminId = $request->getAttribute('admin_id') ?? ($user->admin_id ?? $user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $students = $this->studentModel->getStudentsWithEnrollment(
-                $user->id,
+                $adminId,
                 $currentYear ? $currentYear['id'] : null
             );
 
+            if ($search !== '') {
+                $students = array_values(array_filter($students, function ($student) use ($search) {
+                    $haystack = strtolower(
+                        ($student['name'] ?? '') . ' ' .
+                        ($student['email'] ?? '') . ' ' .
+                        ($student['id_number'] ?? '') . ' ' .
+                        ($student['class_name'] ?? '')
+                    );
+
+                    return strpos($haystack, strtolower($search)) !== false
+                        || (isset($student['id']) && (string)$student['id'] === $search)
+                        || (isset($student['id_number']) && (string)$student['id_number'] === $search);
+                }));
+            }
+
+            $total = count($students);
+            if ($limit) {
+                $students = array_slice($students, 0, $limit);
+            }
+
             $response->getBody()->write(json_encode([
                 'success' => true,
-                'students' => $students
+                'students' => $students,
+                'total' => $total
             ]));
             return $response->withHeader('Content-Type', 'application/json');
         } catch (\Exception $e) {
@@ -600,8 +625,8 @@ class StudentController
         $norm = function ($s) { return strtolower(trim(preg_replace('/\s+/', '_', $s))); };
         $header = array_map($norm, $header);
 
-        $required = ['name','id_number','password'];
-        $optional = ['class_id','class_name','email','phone','address','date_of_birth','gender','parent_name','parent_phone'];
+        $required = ['id_number','password'];
+        $optional = ['first_name','last_name','name','class_id','class_name','email','phone','address','date_of_birth','gender','parent_name','parent_phone'];
         $allowed = array_merge($required, $optional);
 
         $rowNum = 1; // start after header
@@ -626,6 +651,17 @@ class StudentController
                 }
             }
 
+            // Handle name splitting: first_name + last_name or full name
+            $nameParts = $this->extractNameParts($data);
+            $firstName = $nameParts['first_name'];
+            $lastName = $nameParts['last_name'];
+            $fullName = trim($firstName . ' ' . $lastName);
+
+            // Validate that we have at least a first name
+            if (empty($firstName)) {
+                $failed++; $errors[] = [ 'row' => $rowNum, 'error' => 'First name is required (provide first_name and last_name OR name)' ]; continue;
+            }
+
             // Resolve class_id
             $classId = null;
             if (!empty($data['class_id'])) {
@@ -644,7 +680,9 @@ class StudentController
                 // Create student
                 $studentPayload = [
                     'admin_id'      => $user->id,
-                    'name'          => trim($data['name']),
+                    'first_name'    => $firstName,
+                    'last_name'     => $lastName,
+                    'name'          => $fullName,
                     'id_number'     => trim($data['id_number']),
                     'email'         => $data['email'] ?? null,
                     'password'      => $data['password'],
@@ -742,9 +780,9 @@ class StudentController
     // Downloadable CSV template for bulk upload
     public function bulkTemplate(Request $request, Response $response)
     {
-        $headers = ['Name','ID Number','Password','Class Name','Email','Phone','Address','Date of Birth','Gender','Parent Name','Parent Phone'];
+        $headers = ['First Name','Last Name','ID Number','Password','Class Name','Email','Phone','Address','Date of Birth','Gender','Parent Name','Parent Phone'];
         $csv = implode(',', $headers) . "\n";
-        $csv .= "John Doe,ID2025001,secret123,Grade 1 A,john@example.com,5551234,10 Main St,2012-05-01,male,Jane Doe,5559999\n";
+        $csv .= "John,Doe,ID2025001,secret123,Grade 1 A,john@example.com,5551234,10 Main St,2012-05-01,male,Jane Doe,5559999\n";
 
         $response->getBody()->write($csv);
         return $response

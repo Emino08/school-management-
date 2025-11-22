@@ -170,7 +170,7 @@ const RecordPayment = ({ onPaymentRecorded }) => {
             <SelectContent>
               {feeStructures.map((fee) => (
                 <SelectItem key={fee.id} value={fee.id.toString()}>
-                  {fee.fee_name} - ${parseFloat(fee.amount).toFixed(2)}
+                  {fee.fee_name} - SLE {parseFloat(fee.amount).toFixed(2)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -178,7 +178,7 @@ const RecordPayment = ({ onPaymentRecorded }) => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="amount_paid">Amount Paid ($) *</Label>
+          <Label htmlFor="amount_paid">Amount Paid (SLE) *</Label>
           <Input
             id="amount_paid"
             type="number"
@@ -190,7 +190,7 @@ const RecordPayment = ({ onPaymentRecorded }) => {
           />
           {selectedFee && (
             <p className="text-sm text-gray-600">
-              Fee amount: ${parseFloat(selectedFee.amount).toFixed(2)}
+              Fee amount: SLE {parseFloat(selectedFee.amount).toFixed(2)}
             </p>
           )}
         </div>

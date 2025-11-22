@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { FiMenu, FiChevronLeft } from 'react-icons/fi';
 import TeacherSideBar from './TeacherSideBar';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import Logout from '../Logout'
 import AccountMenu from '../../components/AccountMenu';
 import { drawerWidth } from '../../components/styles';
@@ -20,6 +20,8 @@ import TeacherSubmitGrades from "./TeacherSubmitGrades";
 import TeacherSubmissions from "./TeacherSubmissions";
 import TeacherAttendance from "./TeacherAttendance";
 import TeacherTimetable from "./TeacherTimetable";
+import TeacherExamOfficerPanel from "./TeacherExamOfficerPanel";
+import TownMasterPortal from "./TownMasterPortal";
 
 const TeacherDashboard = () => {
     const [open, setOpen] = useState(true);
@@ -33,7 +35,7 @@ const TeacherDashboard = () => {
             <aside
                 className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 transition-all duration-300 z-20 ${
                     open ? 'w-60' : 'w-0'
-                } overflow-hidden`}
+                } overflow-hidden overflow-y-auto`}
             >
                 <div className="flex items-center justify-end p-4 border-b border-gray-200">
                     <Button
@@ -89,11 +91,15 @@ const TeacherDashboard = () => {
 
                             <Route path="Teacher/complain" element={<TeacherComplain />} />
                             <Route path="Teacher/attendance" element={<TeacherAttendance />} />
+                            <Route path="Teacher/subjects" element={<TeacherClasses />} />
 
                             <Route path="Teacher/class" element={<TeacherClassDetails />} />
                             <Route path="Teacher/classes" element={<TeacherClasses />} />
                             <Route path="Teacher/submit-grades" element={<TeacherSubmitGrades />} />
                             <Route path="Teacher/submissions" element={<TeacherSubmissions />} />
+                            <Route path="Teacher/result-management" element={<TeacherSubmissions />} />
+                            <Route path="Teacher/exam-officer" element={<TeacherExamOfficerPanel />} />
+                            <Route path="Teacher/town-master" element={<TownMasterPortal />} />
                             <Route path="Teacher/class/student/:id" element={<TeacherViewStudent />} />
 
                             <Route path="Teacher/class/student/attendance/:studentID/:subjectID" element={<StudentAttendance situation="Subject" />} />
@@ -103,7 +109,7 @@ const TeacherDashboard = () => {
                             <Route path="logout" element={<Logout />} />
 
                             {/* Catch-all route - must be last */}
-                            <Route path='*' element={<Navigate to="/Teacher/dashboard" />} />
+                            <Route path="*" element={<TeacherHomePage />} />
                         </Routes>
                     </div>
                 </main>

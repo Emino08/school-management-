@@ -15,14 +15,22 @@ const AdminProfile = () => {
       if (!currentUser?.token) return;
       setLoading(true);
       try {
-        const res = await axios.get('/admin/settings', { skipAuthRedirect: true });
+        const res = await axios.get('/admin/settings', {
+          skipAuthRedirect: true,
+          headers: currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {},
+        });
         if (res.data?.success) {
           setSchoolSettings(res.data.settings?.general || null);
         } else if (res.data?.message) {
           toast.error(res.data.message || 'Failed to load school profile');
         }
       } catch (error) {
-        toast.error('Failed to load school profile');
+        if (error.response?.status === 401) {
+          toast.error('Your session has expired. Please log in again.');
+          localStorage.removeItem('user');
+        } else {
+          toast.error('Failed to load school profile');
+        }
       } finally {
         setLoading(false);
       }

@@ -9,7 +9,7 @@ export default function useTeacherTodaySchedule() {
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
-    if (!currentUser) return;
+    if (!currentUser?.token) return;
     setLoading(true);
     setError(null);
     try {
@@ -36,4 +36,3 @@ export default function useTeacherTodaySchedule() {
   const today = useMemo(() => new Date(), []);
   return { entries, loading, error, refresh };
 }
-

@@ -30,32 +30,65 @@ const FeeStructures = () => {
     is_mandatory: true
   });
 
+  const getStoredYear = () => {
+    try {
+      return JSON.parse(localStorage.getItem('currentAcademicYear'));
+    } catch (e) {
+      return null;
+    }
+  };
+
   useEffect(() => {
-    fetchFeeStructures();
     fetchClasses();
-    const cy = JSON.parse(localStorage.getItem('currentAcademicYear'));
+    const cy = getStoredYear();
     if (cy) setCurrentYear(cy);
   }, []);
 
-  const fetchFeeStructures = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const currentAcademicYear = JSON.parse(localStorage.getItem('currentAcademicYear'));
+  useEffect(() => {
+    const handleStorage = () => {
+      const stored = getStoredYear();
+      if (stored?.id !== currentYear?.id) {
+        setCurrentYear(stored);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [currentYear]);
 
+  useEffect(() => {
+    if (currentYear?.id) {
+      fetchFeeStructures(currentYear.id);
+    } else {
+      setFeeStructures([]);
+    }
+  }, [currentYear]);
+
+  const fetchFeeStructures = async (targetYearId) => {
+    setLoading(true);
+    const activeYearId = targetYearId || currentYear?.id || getStoredYear()?.id;
+
+    if (!activeYearId) {
+      toast.error('Please select an academic year first');
+      setFeeStructures([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
       const response = await axios.get(
         `${import.meta.env.VITE_API_BASE_URL}/fee-structures`,
         {
-          params: { academic_year_id: currentAcademicYear?.id }
+          params: { academic_year_id: activeYearId }
         }
       );
 
       if (response.data.success) {
         setFeeStructures(response.data.feeStructures);
       }
-      setLoading(false);
     } catch (error) {
       console.error('Error fetching fee structures:', error);
       toast.error('Failed to load fee structures');
+    } finally {
       setLoading(false);
     }
   };
@@ -79,13 +112,15 @@ const FeeStructures = () => {
     e.preventDefault();
 
     try {
-      const token = localStorage.getItem('token');
-      const currentAcademicYear = JSON.parse(localStorage.getItem('currentAcademicYear'));
-
+      const activeYear = currentYear?.id || getStoredYear()?.id;
+      if (!activeYear) {
+        toast.error('Please select an academic year first');
+        return;
+      }
       const payload = {
         ...formData,
         class_id: formData.class_id && formData.class_id !== 'all' ? formData.class_id : null,
-        academic_year_id: currentAcademicYear.id
+        academic_year_id: activeYear
       };
 
       if (editingFee) {
@@ -144,20 +179,20 @@ const FeeStructures = () => {
 
   const importFromAcademicYear = async () => {
     try {
-      const currentAcademicYear = JSON.parse(localStorage.getItem('currentAcademicYear'));
-      if (!currentAcademicYear?.id) {
+      const yearId = currentYear?.id || getStoredYear()?.id;
+      if (!yearId) {
         toast.error('Please select an academic year first');
         return;
       }
       const res = await axios.post(
         `${import.meta.env.VITE_API_BASE_URL}/fee-structures/import-from-year`,
-        { academic_year_id: currentAcademicYear.id }
+        { academic_year_id: yearId }
       );
       if (res.data.success) {
         const created = res.data.created?.length || 0;
         const updated = res.data.updated?.length || 0;
         toast.success(`Imported ${created} and updated ${updated} fee structures`);
-        fetchFeeStructures();
+        fetchFeeStructures(yearId);
       } else {
         toast.error(res.data.message || 'Failed to import defaults');
       }
@@ -256,7 +291,7 @@ const FeeStructures = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="amount">Amount ($) *</Label>
+                  <Label htmlFor="amount">Amount (SLE) *</Label>
                   <Input
                     id="amount"
                     type="number"
@@ -272,19 +307,19 @@ const FeeStructures = () => {
                       {currentYear.term_1_fee ? (
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2"
                           onClick={() => applyTermFee(1)}>
-                          Term 1 (${parseFloat(currentYear.term_1_fee).toLocaleString()})
+                          Term 1 (SLE {parseFloat(currentYear.term_1_fee).toLocaleString()})
                         </Button>
                       ) : null}
                       {currentYear.term_2_fee ? (
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2"
                           onClick={() => applyTermFee(2)}>
-                          Term 2 (${parseFloat(currentYear.term_2_fee).toLocaleString()})
+                          Term 2 (SLE {parseFloat(currentYear.term_2_fee).toLocaleString()})
                         </Button>
                       ) : null}
                       {currentYear.number_of_terms === 3 && currentYear.term_3_fee ? (
                         <Button type="button" variant="outline" size="sm" className="h-7 px-2"
                           onClick={() => applyTermFee(3)}>
-                          Term 3 (${parseFloat(currentYear.term_3_fee).toLocaleString()})
+                          Term 3 (SLE {parseFloat(currentYear.term_3_fee).toLocaleString()})
                         </Button>
                       ) : null}
                     </div>
@@ -395,7 +430,7 @@ const FeeStructures = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600">Amount:</span>
                     <span className="text-2xl font-bold text-green-600">
-                      ${parseFloat(fee.amount).toFixed(2)}
+                      SLE {parseFloat(fee.amount).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">

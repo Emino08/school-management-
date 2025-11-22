@@ -18,9 +18,9 @@ const TeacherSubmissions = () => {
 
   const [submissions, setSubmissions] = useState([]);
   const [approvalFilter, setApprovalFilter] = useState('all');
-  const [examId, setExamId] = useState('');
-  const [subjectId, setSubjectId] = useState('');
-  const [classId, setClassId] = useState('');
+  const [examId, setExamId] = useState('all');
+  const [subjectId, setSubjectId] = useState('all');
+  const [classId, setClassId] = useState('all');
   const [exams, setExams] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -50,9 +50,9 @@ const TeacherSubmissions = () => {
       let url = `${API_URL}/teachers/${teacherId}/submissions`;
       const params = new URLSearchParams();
       if (approvalFilter !== 'all') params.append('approval_status', approvalFilter);
-      if (examId) params.append('exam_id', examId);
-      if (subjectId) params.append('subject_id', subjectId);
-      if (classId) params.append('class_id', classId);
+      if (examId && examId !== 'all') params.append('exam_id', examId);
+      if (subjectId && subjectId !== 'all') params.append('subject_id', subjectId);
+      if (classId && classId !== 'all') params.append('class_id', classId);
       if (params.toString()) url += `?${params.toString()}`;
       const res = await axios.get(url);
       if (res.data?.success) setSubmissions(res.data.submissions || []);
@@ -111,7 +111,7 @@ const TeacherSubmissions = () => {
               <Select value={examId} onValueChange={setExamId}>
                 <SelectTrigger><SelectValue placeholder="All Exams" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Exams</SelectItem>
+                  <SelectItem value="all">All Exams</SelectItem>
                   {exams.map(ex => (<SelectItem key={ex.id} value={String(ex.id)}>{ex.exam_name}</SelectItem>))}
                 </SelectContent>
               </Select>
@@ -121,7 +121,7 @@ const TeacherSubmissions = () => {
               <Select value={subjectId} onValueChange={setSubjectId}>
                 <SelectTrigger><SelectValue placeholder="All Subjects" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Subjects</SelectItem>
+                  <SelectItem value="all">All Subjects</SelectItem>
                   {subjects.map(su => (<SelectItem key={su.id} value={String(su.id)}>{su.subject_name}</SelectItem>))}
                 </SelectContent>
               </Select>
@@ -131,7 +131,7 @@ const TeacherSubmissions = () => {
               <Select value={classId} onValueChange={setClassId}>
                 <SelectTrigger><SelectValue placeholder="All Classes" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Classes</SelectItem>
+                  <SelectItem value="all">All Classes</SelectItem>
                   {classes.map(cls => (<SelectItem key={cls.id} value={String(cls.id)}>{cls.class_name}</SelectItem>))}
                 </SelectContent>
               </Select>
@@ -251,4 +251,3 @@ const TeacherSubmissions = () => {
 };
 
 export default TeacherSubmissions;
-

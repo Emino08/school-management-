@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Models\MedicalStaff;
 use App\Models\MedicalRecord;
 use App\Models\ParentNotification;
+use App\Models\Student;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Firebase\JWT\JWT;
@@ -14,12 +15,14 @@ class MedicalController
     private $medicalStaffModel;
     private $medicalRecordModel;
     private $notificationModel;
+    private $studentModel;
 
     public function __construct()
     {
         $this->medicalStaffModel = new MedicalStaff();
         $this->medicalRecordModel = new MedicalRecord();
         $this->notificationModel = new ParentNotification();
+        $this->studentModel = new Student();
     }
 
     // Medical Staff Authentication
@@ -164,6 +167,15 @@ class MedicalController
                 }
             }
 
+            $student = $this->studentModel->findById($data['student_id']);
+            if (!$student || (int)$student['admin_id'] !== (int)$adminId) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Student not found for this school'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+            }
+
             $recordData = [
                 'student_id' => $data['student_id'],
                 'admin_id' => $adminId,
@@ -293,11 +305,30 @@ class MedicalController
             $queryParams = $request->getQueryParams();
             $status = $queryParams['status'] ?? null;
 
+            $adminId = $request->getAttribute('admin_id');
+            $student = $this->studentModel->findById($studentId);
+
+            if (!$student || ($adminId && (int)$student['admin_id'] !== (int)$adminId)) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Student not found'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+            }
+
             $records = $this->medicalRecordModel->getStudentRecords($studentId, $status);
+            $documents = $this->medicalRecordModel->getStudentDocuments($studentId);
 
             $response->getBody()->write(json_encode([
                 'success' => true,
-                'records' => $records
+                'student' => [
+                    'id' => $student['id'],
+                    'name' => $student['name'],
+                    'id_number' => $student['id_number'],
+                    'date_of_birth' => $student['date_of_birth'] ?? null,
+                ],
+                'records' => $records,
+                'documents' => $documents
             ]));
             return $response->withHeader('Content-Type', 'application/json');
 

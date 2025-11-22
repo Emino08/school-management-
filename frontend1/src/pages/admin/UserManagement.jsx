@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import axios from '@/redux/axiosConfig';
 import UserFormModal from './userManagement/UserFormModal';
+import BackButton from '@/components/BackButton';
 import { toast } from 'sonner';
 import {
   FiUsers, FiUserPlus, FiEdit2, FiTrash2, FiSearch,
   FiFilter, FiDownload, FiUpload, FiCheckCircle,
-  FiXCircle, FiShield, FiDollarSign, FiBook
+  FiXCircle, FiShield, FiDollarSign, FiBook, FiHeart, FiUserCheck
 } from 'react-icons/fi';
 
 const UserManagement = () => {
@@ -26,6 +27,9 @@ const UserManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const disablePrincipalActions = activeTab === 'principals' && !canManagePrincipals;
+  const isParentTab = activeTab === 'parents';
+  const isMedicalTab = activeTab === 'medical';
+  const disableCreation = disablePrincipalActions || isParentTab;
 
   useEffect(() => {
     fetchUserStats();
@@ -59,6 +63,8 @@ const UserManagement = () => {
         teachers: 'teacher',
         finance: 'finance',
         principals: 'principal',
+        medical: 'medical',
+        parents: 'parent',
         overview: 'all'
       };
 
@@ -75,8 +81,22 @@ const UserManagement = () => {
       if (response.data.success) {
         const payload = response.data.data || {};
         // list tab returns under data.users; overview returns grouped
-        const list = payload.users || payload.students?.users || payload.teachers?.users || payload.finance?.users || [];
-        const total = payload.total || payload.students?.total || payload.teachers?.total || payload.finance?.total || list.length;
+        const list =
+          payload.users ||
+          payload.students?.users ||
+          payload.teachers?.users ||
+          payload.finance?.users ||
+          payload.medical?.users ||
+          payload.parents?.users ||
+          [];
+        const total =
+          payload.total ||
+          payload.students?.total ||
+          payload.teachers?.total ||
+          payload.finance?.total ||
+          payload.medical?.total ||
+          payload.parents?.total ||
+          list.length;
         setUsers(list);
         setTotalPages(Math.max(1, Math.ceil(total / 20)));
       } else {
@@ -91,6 +111,10 @@ const UserManagement = () => {
   };
 
   const handleCreateUser = async (formData) => {
+    if (isParentTab) {
+      toast.error('Parents create their own accounts from the Parent Portal');
+      return;
+    }
     if (activeTab === 'principals' && !canManagePrincipals) {
       toast.error('Only administrators can create principal accounts');
       return;
@@ -199,7 +223,9 @@ const UserManagement = () => {
         students: 'student',
         teachers: 'teacher',
         finance: 'finance',
-        principals: 'principal'
+        principals: 'principal',
+        medical: 'medical',
+        parents: 'parent'
       };
 
       const response = await axios.post(
@@ -231,19 +257,24 @@ const UserManagement = () => {
     { id: 'students', label: 'Students', icon: FiBook },
     { id: 'teachers', label: 'Teachers', icon: FiUsers },
     { id: 'finance', label: 'Finance Users', icon: FiDollarSign },
+    { id: 'medical', label: 'Medical Staff', icon: FiHeart },
+    { id: 'parents', label: 'Parents', icon: FiUserCheck },
     { id: 'principals', label: 'Principals', icon: FiShield }
   ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Back Button */}
+        <BackButton to="/Admin/dashboard" label="Back to Dashboard" />
+        
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             User Management
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Manage students, teachers, finance users, principals, and permissions
+            Manage students, teachers, finance users, medical staff, parents, and permissions
           </p>
         </div>
 
@@ -283,7 +314,7 @@ const UserManagement = () => {
 
         {/* Overview Tab */}
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             <StatCard
               title="Total Students"
               value={stats.total_students || 0}
@@ -297,6 +328,20 @@ const UserManagement = () => {
               icon={FiUsers}
               color="green"
               onClick={() => setActiveTab('teachers')}
+            />
+            <StatCard
+              title="Parents"
+              value={stats.total_parents || 0}
+              icon={FiUserCheck}
+              color="teal"
+              onClick={() => setActiveTab('parents')}
+            />
+            <StatCard
+              title="Medical Staff"
+              value={stats.total_medical_staff || 0}
+              icon={FiHeart}
+              color="red"
+              onClick={() => setActiveTab('medical')}
             />
             <StatCard
               title="Finance Users"
@@ -344,7 +389,7 @@ const UserManagement = () => {
                 </div>
 
                 {/* Filters */}
-                {(activeTab === 'teachers' || activeTab === 'finance') && (
+                {(activeTab === 'teachers' || activeTab === 'finance' || isMedicalTab) && (
                   <div className="flex items-center gap-2">
                     <FiFilter className="text-gray-400" />
                     <select
@@ -369,12 +414,16 @@ const UserManagement = () => {
                         toast.error('Only administrators can manage principal accounts');
                         return;
                       }
+                      if (isParentTab) {
+                        toast.info('Parents register their own accounts from the Parent Portal');
+                        return;
+                      }
                       setEditingUser(null);
                       setShowCreateModal(true);
                     }}
                     className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700
                       text-white rounded-lg transition-colors disabled:opacity-60"
-                    disabled={disablePrincipalActions}
+                    disabled={disableCreation}
                   >
                     <FiUserPlus className="w-5 h-5" />
                     Add User
@@ -393,6 +442,12 @@ const UserManagement = () => {
                 </div>
               </div>
             </div>
+
+            {isParentTab && (
+              <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
+                Parents create their own accounts from the Parent Portal. You can view, edit, or remove their accounts here.
+              </div>
+            )}
 
             {disablePrincipalActions && (
               <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
@@ -489,7 +544,9 @@ const StatCard = ({ title, value, icon: Icon, color, onClick }) => {
     green: 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
     purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300',
     orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300',
-    amber: 'bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-300'
+    amber: 'bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-300',
+    teal: 'bg-teal-100 text-teal-600 dark:bg-teal-900 dark:text-teal-300',
+    red: 'bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300'
   };
 
   return (
@@ -531,6 +588,8 @@ const UserTable = ({
       case 'students': return 'student';
       case 'teachers': return 'teacher';
       case 'finance': return 'finance';
+      case 'medical': return 'medical';
+      case 'parents': return 'parent';
       case 'principals': return 'principal';
       default: return 'user';
     }
@@ -565,6 +624,11 @@ const UserTable = ({
                   Phone
                 </th>
               )}
+              {(userType === 'medical' || userType === 'parents') && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Phone
+                </th>
+              )}
               {userType === 'students' && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   ID Number
@@ -575,12 +639,27 @@ const UserTable = ({
                   Class
                 </th>
               )}
+              {userType === 'medical' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Qualification
+                </th>
+              )}
+              {userType === 'parents' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Relationship
+                </th>
+              )}
               {userType === 'teachers' && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Exam Officer
                 </th>
               )}
-              {(userType === 'teachers' || userType === 'finance') && (
+              {userType === 'teachers' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Town Master
+                </th>
+              )}
+              {(userType === 'teachers' || userType === 'finance' || userType === 'medical' || userType === 'parents') && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
@@ -620,6 +699,13 @@ const UserTable = ({
                     {user.email || 'N/A'}
                   </div>
                 </td>
+                {(userType === 'medical' || userType === 'parents') && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.phone || 'N/A'}
+                    </div>
+                  </td>
+                )}
                 {userType === 'principals' && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -641,6 +727,20 @@ const UserTable = ({
                     </div>
                   </td>
                 )}
+                {userType === 'medical' && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.qualification || 'N/A'}
+                    </div>
+                  </td>
+                )}
+                {userType === 'parents' && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                      {user.relationship || 'N/A'}
+                    </div>
+                  </td>
+                )}
                 {userType === 'teachers' && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <button
@@ -655,16 +755,31 @@ const UserTable = ({
                     </button>
                   </td>
                 )}
-                {(userType === 'teachers' || userType === 'finance') && (
+                {userType === 'teachers' && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        (user.is_active || user.is_deleted === 0)
+                        user.is_town_master
+                          ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300'
+                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {user.is_town_master ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                )}
+                {(userType === 'teachers' || userType === 'finance' || userType === 'medical' || userType === 'parents') && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        (userType === 'parents' && user.is_verified) || (userType !== 'parents' && (user.is_active || user.is_deleted === 0))
                           ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
                           : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
                       }`}
                     >
-                      {(user.is_active || user.is_deleted === 0) ? 'Active' : 'Inactive'}
+                      {userType === 'parents'
+                        ? (user.is_verified ? 'Verified' : 'Pending')
+                        : (user.is_active || user.is_deleted === 0) ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                 )}

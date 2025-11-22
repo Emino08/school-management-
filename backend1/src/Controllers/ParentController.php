@@ -159,6 +159,10 @@ class ParentController
             $parentId = $request->getAttribute('user_id');
             $data = $request->getParsedBody();
 
+            // Debug logging
+            error_log("Parent verification - Parent ID: " . $parentId);
+            error_log("Parent verification - Data: " . json_encode($data));
+
             if (empty($data['student_id']) || empty($data['date_of_birth'])) {
                 $response->getBody()->write(json_encode([
                     'success' => false,
@@ -173,6 +177,9 @@ class ParentController
                 $data['student_id'],
                 $data['date_of_birth']
             );
+
+            // Debug logging
+            error_log("Parent verification - Student found: " . ($student ? json_encode($student) : 'NULL'));
 
             if (!$student) {
                 $response->getBody()->write(json_encode([

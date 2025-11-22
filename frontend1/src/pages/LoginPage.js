@@ -4,14 +4,12 @@ import { useDispatch, useSelector } from "react-redux";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FiEye, FiEyeOff, FiLoader } from "react-icons/fi";
-import bgpic from "../assets/designlogin.jpg";
-import { LightPurpleButton } from "../components/buttonStyles";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Eye, EyeOff, Loader2, ArrowLeft } from "lucide-react";
 import { loginUser } from "../redux/userRelated/userHandle";
 import { toast } from "sonner";
 import BoSchoolLogo from "@/assets/Bo-School-logo.png";
+import BackgroundImage from "@/assets/boSchool.jpg";
 
 const LoginPage = ({ role }) => {
   const dispatch = useDispatch();
@@ -22,7 +20,6 @@ const LoginPage = ({ role }) => {
   );
   const [searchParams] = useSearchParams();
   const [toggle, setToggle] = useState(false);
-  const [guestLoader, setGuestLoader] = useState(false);
   const [loader, setLoader] = useState(false);
   const [adminAccountType, setAdminAccountType] = useState("Admin");
 
@@ -69,31 +66,6 @@ const LoginPage = ({ role }) => {
     if (name === "rollNumber") setRollNumberError(false);
   };
 
-  const guestModeHandler = () => {
-    const password = "zxc";
-
-    if (role === "Admin") {
-      const email = "yogendra@12";
-      const fields = { email, password };
-      if (adminAccountType === "Principal") {
-        toast.info("Guest mode is available for administrator accounts only.");
-        return;
-      }
-      setGuestLoader(true);
-      dispatch(loginUser(fields, adminAccountType));
-    } else if (role === "Student") {
-      const rollNum = "1";
-      const fields = { rollNum, password };
-      setGuestLoader(true);
-      dispatch(loginUser(fields, role));
-    } else if (role === "Teacher") {
-      const email = "tony@12";
-      const fields = { email, password };
-      setGuestLoader(true);
-      dispatch(loginUser(fields, role));
-    }
-  };
-
   useEffect(() => {
     if (role === "Admin") {
       const accountParam = searchParams.get("account");
@@ -104,8 +76,7 @@ const LoginPage = ({ role }) => {
   }, [role, searchParams]);
 
   useEffect(() => {
-    if (status === "success" || currentUser !== null) {
-      console.log(currentRole);
+    if (status === "success") {
       toast.success("Login successful!", {
         description: `Welcome back, ${currentUser?.name || "User"}!`,
       });
@@ -121,160 +92,180 @@ const LoginPage = ({ role }) => {
         description: response || "Invalid credentials. Please try again.",
       });
       setLoader(false);
-      setGuestLoader(false);
     } else if (status === "error") {
       toast.error("Network Error", {
         description: "Unable to connect to the server. Please check your connection.",
       });
       setLoader(false);
-      setGuestLoader(false);
     }
   }, [status, currentRole, navigate, error, response, currentUser]);
 
-  const portalTitle = role === "Admin" ? `${adminAccountType} Login` : `${role} Login`;
-  const portalDescription =
-    role === "Admin"
-      ? "Select how you'd like to access the administrative portal"
-      : "Welcome back! Please enter your details";
+  const portalTitle = role === "Admin" ? adminAccountType : role;
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
-      {/* Left Side - Form */}
-      <div className="flex items-center justify-center p-8 bg-white">
-        <Card className="w-full max-w-md border-0 shadow-none">
-          <CardHeader className="space-y-1">
-            <div className="flex justify-center">
-              <img
-                src={BoSchoolLogo}
-                alt="Bo School crest"
-                className="h-16 w-auto drop-shadow-[0_12px_20px_rgba(0,0,0,0.35)]"
-              />
-            </div>
-            <CardTitle className="text-4xl text-purple-900 text-center">{portalTitle}</CardTitle>
-            <CardDescription className="text-center text-base">
-              {portalDescription}
-            </CardDescription>
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center">
+      {/* Background Image with Overlay */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: `url(${BackgroundImage})` }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900/90 via-slate-900/85 to-purple-900/90 backdrop-blur-[2px]" />
+      </div>
+
+      {/* Content */}
+      <div className="relative w-full max-w-md mx-auto p-6">
+        {/* Back Button */}
+        <Link to="/choose">
+          <Button 
+            variant="ghost" 
+            className="mb-6 text-white hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+        </Link>
+
+        {/* Logo */}
+        <div className="flex justify-center mb-8">
+          <img
+            src={BoSchoolLogo}
+            alt="Bo Government Secondary School"
+            className="h-20 w-auto drop-shadow-2xl"
+          />
+        </div>
+
+        {/* Login Card */}
+        <Card className="border-white/20 bg-white/10 backdrop-blur-md shadow-2xl">
+          <CardHeader className="space-y-2 pb-6">
+            <CardTitle className="text-3xl text-center text-white font-light tracking-tight">
+              {portalTitle} Portal
+            </CardTitle>
+            <p className="text-center text-slate-200 text-sm font-light">
+              Sign in to continue
+            </p>
           </CardHeader>
+          
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               {role === "Admin" && (
-                <div>
-                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Administrative Role
+                <div className="space-y-3">
+                  <Label className="text-sm font-light text-slate-200">
+                    Account Type
                   </Label>
-                  <div className="mt-2 flex gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     {["Admin", "Principal"].map((type) => (
                       <button
                         key={type}
                         type="button"
                         onClick={() => setAdminAccountType(type)}
-                        className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
+                        className={`px-4 py-3 rounded-lg text-sm font-light transition-all ${
                           adminAccountType === type
-                            ? "border-purple-600 bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-100"
-                            : "border-gray-300 text-gray-600 hover:border-purple-400 dark:border-gray-600 dark:text-gray-300"
+                            ? "bg-white text-slate-900 shadow-lg"
+                            : "bg-white/10 text-white border border-white/20 hover:bg-white/20"
                         }`}
                       >
-                        {type === "Admin" ? "Administrator" : "Principal"}
+                        {type}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
+
               {role === "Student" ? (
                 <div className="space-y-2">
-                  <Label htmlFor="rollNumber">ID Number</Label>
+                  <Label htmlFor="rollNumber" className="text-slate-200 font-light">
+                    ID Number
+                  </Label>
                   <Input
                     id="rollNumber"
                     name="rollNumber"
                     type="text"
-                    placeholder="Enter your ID Number"
-                    className={rollNumberError ? "border-red-500" : ""}
+                    placeholder="Enter your ID number"
+                    className={`bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus:bg-white/20 focus:border-white/40 ${
+                      rollNumberError ? "border-red-400" : ""
+                    }`}
                     onChange={handleInputChange}
                   />
                   {rollNumberError && (
-                    <p className="text-sm text-red-500">ID Number is required</p>
+                    <p className="text-sm text-red-300">ID Number is required</p>
                   )}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email" className="text-slate-200 font-light">
+                    Email
+                  </Label>
                   <Input
                     id="email"
                     name="email"
                     type="email"
                     placeholder="Enter your email"
-                    className={emailError ? "border-red-500" : ""}
+                    className={`bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus:bg-white/20 focus:border-white/40 ${
+                      emailError ? "border-red-400" : ""
+                    }`}
                     onChange={handleInputChange}
                   />
-                  {emailError && <p className="text-sm text-red-500">Email is required</p>}
+                  {emailError && <p className="text-sm text-red-300">Email is required</p>}
                 </div>
               )}
+
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className="text-slate-200 font-light">
+                  Password
+                </Label>
                 <div className="relative">
                   <Input
                     id="password"
                     name="password"
                     type={toggle ? "text" : "password"}
                     placeholder="Enter your password"
-                    className={passwordError ? "border-red-500" : ""}
+                    className={`bg-white/10 border-white/20 text-white placeholder:text-slate-400 focus:bg-white/20 focus:border-white/40 pr-10 ${
+                      passwordError ? "border-red-400" : ""
+                    }`}
                     onChange={handleInputChange}
                   />
                   <button
                     type="button"
                     onClick={() => setToggle(!toggle)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white transition-colors"
                   >
-                    {toggle ? <FiEye className="h-5 w-5" /> : <FiEyeOff className="h-5 w-5" />}
+                    {toggle ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
                   </button>
                 </div>
-                {passwordError && <p className="text-sm text-red-500">Password is required</p>}
+                {passwordError && <p className="text-sm text-red-300">Password is required</p>}
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="remember" />
-                  <Label htmlFor="remember" className="cursor-pointer font-normal">
-                    Remember me
-                  </Label>
-                </div>
-                <Link to="#" className="text-sm text-purple-600 hover:underline">
+              <div className="flex items-center justify-end pt-2">
+                <Link 
+                  to="/forgot-password" 
+                  className="text-sm text-slate-300 hover:text-white transition-colors font-light"
+                >
                   Forgot password?
                 </Link>
               </div>
 
-              <LightPurpleButton type="submit" className="w-full" disabled={loader}>
+              <Button 
+                type="submit" 
+                className="w-full bg-white hover:bg-slate-100 text-slate-900 py-6 text-base font-normal shadow-lg transition-all hover:scale-[1.02]" 
+                disabled={loader}
+              >
                 {loader ? (
                   <div className="flex items-center">
-                    <FiLoader className="mr-2 h-4 w-4 animate-spin" />
-                    Loading...
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Signing in...
                   </div>
                 ) : (
-                  "Login"
-                )}
-              </LightPurpleButton>
-
-              <Button
-                type="button"
-                onClick={guestModeHandler}
-                variant="outline"
-                className="w-full border-purple-600 text-purple-600 hover:bg-purple-50"
-                disabled={guestLoader}
-              >
-                {guestLoader ? (
-                  <div className="flex items-center">
-                    <FiLoader className="mr-2 h-4 w-4 animate-spin" />
-                    Loading...
-                  </div>
-                ) : (
-                  "Login as Guest"
+                  "Sign In"
                 )}
               </Button>
 
               {role === "Admin" && (
-                <p className="text-center text-sm">
+                <p className="text-center text-sm text-slate-300 pt-4">
                   Don't have an account?{" "}
-                  <Link to="/Adminregister" className="text-purple-600 hover:underline font-semibold">
+                  <Link 
+                    to="/Adminregister" 
+                    className="text-white hover:underline font-normal"
+                  >
                     Sign up
                   </Link>
                 </p>
@@ -282,22 +273,12 @@ const LoginPage = ({ role }) => {
             </form>
           </CardContent>
         </Card>
+
+        {/* School Name */}
+        <p className="text-center text-slate-300 text-sm font-light mt-8">
+          Bo Government Secondary School
+        </p>
       </div>
-
-      {/* Right Side - Image */}
-      <div
-        className="hidden lg:block bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${bgpic})` }}
-      />
-
-      {guestLoader && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg flex items-center space-x-3">
-            <FiLoader className="h-6 w-6 animate-spin text-purple-600" />
-            <span className="text-lg">Please Wait...</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
