@@ -333,7 +333,7 @@ const ReportsAnalytics = () => {
                     <FiDollarSign className="h-6 w-6 text-green-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">₦{(overviewData?.total_revenue || 0).toLocaleString()}</p>
+                    <p className="text-2xl font-bold">SLE {(overviewData?.total_revenue || 0).toLocaleString()}</p>
                     <p className="text-sm text-gray-600">Total Revenue</p>
                   </div>
                 </div>
@@ -513,13 +513,13 @@ const ReportsAnalytics = () => {
                     <div className="p-4 bg-green-50 rounded-lg">
                       <p className="text-sm text-gray-600">Total Revenue</p>
                       <p className="text-2xl font-bold text-green-700">
-                        ₦{(financialData?.total_revenue || 0).toLocaleString()}
+                        SLE {(financialData?.total_revenue || 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-4 bg-yellow-50 rounded-lg">
                       <p className="text-sm text-gray-600">Pending Fees</p>
                       <p className="text-2xl font-bold text-yellow-700">
-                        ₦{(financialData?.pending_fees || 0).toLocaleString()}
+                        SLE {(financialData?.pending_fees || 0).toLocaleString()}
                       </p>
                     </div>
                     <div className="p-4 bg-blue-50 rounded-lg">
@@ -531,7 +531,7 @@ const ReportsAnalytics = () => {
                     <div className="p-4 bg-purple-50 rounded-lg">
                       <p className="text-sm text-gray-600">This Month</p>
                       <p className="text-2xl font-bold text-purple-700">
-                        ₦{(financialData?.this_month || 0).toLocaleString()}
+                        SLE {(financialData?.this_month || 0).toLocaleString()}
                       </p>
                     </div>
                   </div>

@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Models\Student;
 use App\Models\ParentNotification;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -9,6 +11,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 class SuspensionController
 {
+    use LogsActivity;
+
     private $studentModel;
     private $notificationModel;
 
@@ -211,3 +215,4 @@ class SuspensionController
         }
     }
 }
+

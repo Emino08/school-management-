@@ -11,11 +11,14 @@ use App\Models\AcademicYear;
 use App\Models\MedicalStaff;
 use App\Models\ParentUser;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 class UserManagementController
 {
+    use LogsActivity;
+
     private $studentModel;
     private $teacherModel;
     private $adminModel;
@@ -45,6 +48,7 @@ class UserManagementController
         try {
             $user = $request->getAttribute('user');
             $adminId = $this->resolveAdminId($request, $user);
+            $accountId = $this->getAccountId($request, $user);
             $query = $request->getQueryParams();
             $userType = $query['user_type'] ?? 'all';
             $search = trim($query['search'] ?? '');
@@ -223,6 +227,29 @@ class UserManagementController
                     ];
                     break;
 
+                case 'admin':
+                    if (!$this->adminModel->isSuperAdmin($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can view admin users']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+                    $admins = $this->adminModel->getAdminsBySchool($adminId) ?: [];
+                    if ($search !== '') {
+                        $admins = array_values(array_filter($admins, function ($admin) use ($search) {
+                            $haystack = strtolower(($admin['contact_name'] ?? '') . ' ' . ($admin['email'] ?? '') . ' ' . ($admin['school_name'] ?? ''));
+                            return strpos($haystack, strtolower($search)) !== false;
+                        }));
+                    }
+                    $total = count($admins);
+                    $pagedAdmins = array_slice($admins, $offset, $limit);
+                    $result = [
+                        'users' => array_map([$this, 'formatAdminRecord'], $pagedAdmins),
+                        'total' => $total,
+                        'page' => $page,
+                        'limit' => $limit,
+                        'type' => 'admin'
+                    ];
+                    break;
+
                 default:
                     $response->getBody()->write(json_encode(['success' => false, 'message' => 'Invalid user type']));
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -244,6 +271,7 @@ class UserManagementController
         try {
             $user = $request->getAttribute('user');
             $adminId = $this->resolveAdminId($request, $user);
+            $accountId = $this->getAccountId($request, $user);
             $body = $request->getParsedBody() ?? [];
             $userType = $body['user_type'] ?? null;
 
@@ -392,8 +420,8 @@ class UserManagementController
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
 
                 case 'principal':
-                    if (!$this->isSuperAdmin($request, $user)) {
-                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can create principal accounts']));
+                    if (!$this->adminModel->canCreatePrincipals($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only admins can create principal accounts']));
                         return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
                     }
 
@@ -427,6 +455,36 @@ class UserManagementController
                     $result = $principal ? $this->formatPrincipalRecord($principal) : ['id' => $newId];
                     break;
 
+                case 'admin':
+                    if (!$this->adminModel->isSuperAdmin($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can create admin accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+
+                    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Valid email is required for admin accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    if ($this->adminModel->findByEmail($email)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $adminPayload = Validator::sanitize([
+                        'contact_name' => $name,
+                        'name' => $name,
+                        'email' => $email,
+                        'password' => $password,
+                        'phone' => $body['phone'] ?? null,
+                        'signature' => $body['signature'] ?? null
+                    ]);
+
+                    $newAdminId = $this->adminModel->createAdminUser($adminPayload, $accountId);
+                    $newAdmin = $this->adminModel->findById($newAdminId);
+                    $result = $newAdmin ? $this->formatAdminRecord($newAdmin) : ['id' => $newAdminId];
+                    break;
+
                 default:
                     $response->getBody()->write(json_encode(['success' => false, 'message' => 'Invalid user type']));
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -457,6 +515,7 @@ class UserManagementController
         try {
             $user = $request->getAttribute('user');
             $adminId = $this->resolveAdminId($request, $user);
+            $accountId = $this->getAccountId($request, $user);
             $id = $args['id'] ?? null;
             $body = $request->getParsedBody() ?? [];
             $userType = $body['user_type'] ?? null;
@@ -481,6 +540,9 @@ class UserManagementController
                         'allergies', 'emergency_contact'
                     ];
                     
+                    // Handle class change separately
+                    $newClassId = $body['class_id'] ?? $body['sclassName'] ?? null;
+                    
                     $studentData = [];
                     foreach ($allowedStudentFields as $field) {
                         if (array_key_exists($field, $body)) {
@@ -493,16 +555,104 @@ class UserManagementController
                         $studentData['password'] = password_hash($studentData['password'], PASSWORD_BCRYPT);
                     }
                     
-                    if (empty($studentData)) {
+                    if (empty($studentData) && $newClassId === null) {
                         $response->getBody()->write(json_encode(['success' => false, 'message' => 'No valid fields to update']));
                         return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
                     }
                     
-                    $result = $this->studentModel->update($id, $studentData);
+                    // Update student basic info
+                    if (!empty($studentData)) {
+                        $result = $this->studentModel->update($id, $studentData);
+                    }
+                    
+                    // Handle class enrollment update
+                    if ($newClassId !== null && is_numeric($newClassId)) {
+                        $currentYear = $this->academicYearModel->getCurrentYear($adminId);
+                        
+                        if ($currentYear) {
+                            $enrollmentModel = new \App\Models\StudentEnrollment();
+                            
+                            // Check if enrollment exists
+                            $existingEnrollment = $enrollmentModel->findOne([
+                                'student_id' => $id,
+                                'academic_year_id' => $currentYear['id']
+                            ]);
+                            
+                            if ($existingEnrollment) {
+                                // Update existing enrollment
+                                $enrollmentModel->update($existingEnrollment['id'], [
+                                    'class_id' => $newClassId,
+                                    'status' => 'active'
+                                ]);
+                            } else {
+                                // Create new enrollment
+                                $enrollmentModel->create([
+                                    'student_id' => $id,
+                                    'class_id' => $newClassId,
+                                    'academic_year_id' => $currentYear['id'],
+                                    'status' => 'active'
+                                ]);
+                            }
+                            $result = true;
+                        }
+                    }
                     break;
 
                 case 'teacher':
-                    $result = $this->teacherModel->update($id, $body);
+                    // Whitelist updatable fields
+                    $allowedTeacherFields = [
+                        'name', 'first_name', 'last_name', 'password', 'phone', 'address',
+                        'qualification', 'experience_years', 'is_exam_officer',
+                        'can_approve_results', 'is_town_master', 'is_class_master', 'class_master_of'
+                    ];
+                    
+                    $teacherData = [];
+                    foreach ($allowedTeacherFields as $field) {
+                        if (array_key_exists($field, $body)) {
+                            $teacherData[$field] = $body[$field];
+                        }
+                    }
+                    
+                    // Handle name splitting
+                    if (isset($teacherData['name']) && !empty($teacherData['name'])) {
+                        $nameParts = explode(' ', trim($teacherData['name']), 2);
+                        $teacherData['first_name'] = $nameParts[0];
+                        $teacherData['last_name'] = isset($nameParts[1]) ? $nameParts[1] : '';
+                    } elseif (isset($teacherData['first_name']) || isset($teacherData['last_name'])) {
+                        $teacher = $this->teacherModel->findById($id);
+                        $firstName = isset($teacherData['first_name']) ? trim($teacherData['first_name']) : $teacher['first_name'] ?? '';
+                        $lastName = isset($teacherData['last_name']) ? trim($teacherData['last_name']) : $teacher['last_name'] ?? '';
+                        $teacherData['name'] = trim($firstName . ' ' . $lastName);
+                    }
+                    
+                    // Hash password if provided
+                    if (!empty($teacherData['password'])) {
+                        $teacherData['password'] = password_hash($teacherData['password'], PASSWORD_BCRYPT);
+                    } else {
+                        unset($teacherData['password']);
+                    }
+                    
+                    // Normalize boolean fields
+                    if (isset($teacherData['is_class_master'])) {
+                        $teacherData['is_class_master'] = !empty($teacherData['is_class_master']) ? 1 : 0;
+                        if (!$teacherData['is_class_master']) {
+                            $teacherData['class_master_of'] = null;
+                        }
+                    }
+                    if (isset($teacherData['is_exam_officer'])) {
+                        $teacherData['is_exam_officer'] = !empty($teacherData['is_exam_officer']) ? 1 : 0;
+                    }
+                    if (isset($teacherData['can_approve_results'])) {
+                        $teacherData['can_approve_results'] = !empty($teacherData['can_approve_results']) ? 1 : 0;
+                    }
+                    if (isset($teacherData['is_town_master'])) {
+                        $teacherData['is_town_master'] = !empty($teacherData['is_town_master']) ? 1 : 0;
+                    }
+                    
+                    // Update teacher
+                    if (!empty($teacherData)) {
+                        $result = $this->teacherModel->update($id, $teacherData);
+                    }
 
                     // Handle exam officer status
                     if (isset($body['is_exam_officer'])) {
@@ -512,6 +662,30 @@ class UserManagementController
                                 $this->createExamOfficerRecord($teacher['email'], $adminId);
                             } else {
                                 $this->removeExamOfficerRecord($teacher['email']);
+                            }
+                        }
+                    }
+                    
+                    // Handle subject assignments if provided
+                    if (isset($body['teachSubjects']) && is_array($body['teachSubjects'])) {
+                        $currentYear = $this->academicYearModel->getCurrentYear($adminId);
+                        if ($currentYear) {
+                            $db = \App\Config\Database::getInstance()->getConnection();
+                            
+                            // Delete existing assignments
+                            $stmt = $db->prepare("DELETE FROM teacher_assignments WHERE teacher_id = :teacher_id AND academic_year_id = :year_id");
+                            $stmt->execute([':teacher_id' => $id, ':year_id' => $currentYear['id']]);
+                            
+                            // Insert new assignments
+                            $stmt = $db->prepare("INSERT INTO teacher_assignments (teacher_id, subject_id, academic_year_id, created_at) VALUES (:teacher_id, :subject_id, :year_id, NOW())");
+                            foreach ($body['teachSubjects'] as $subjectId) {
+                                if (is_numeric($subjectId)) {
+                                    $stmt->execute([
+                                        ':teacher_id' => $id,
+                                        ':subject_id' => (int)$subjectId,
+                                        ':year_id' => $currentYear['id']
+                                    ]);
+                                }
                             }
                         }
                     }
@@ -584,8 +758,8 @@ class UserManagementController
                     break;
 
                 case 'principal':
-                    if (!$this->isSuperAdmin($request, $user)) {
-                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can update principal accounts']));
+                    if (!$this->adminModel->canCreatePrincipals($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only admins can update principal accounts']));
                         return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
                     }
                     $existingPrincipal = $this->adminModel->findPrincipalById($id, $adminId);
@@ -618,6 +792,48 @@ class UserManagementController
                     $result = $this->adminModel->updatePrincipal($id, $adminId, $principalUpdate);
                     break;
 
+                case 'admin':
+                    if (!$this->adminModel->isSuperAdmin($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can update admin accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+
+                    $targetAdmin = $this->adminModel->findById($id);
+                    if (!$targetAdmin || ((int)$targetAdmin['id'] !== (int)$adminId && (int)($targetAdmin['parent_admin_id'] ?? 0) !== (int)$adminId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Admin not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+
+                    if (!empty($body['email']) && $body['email'] !== $targetAdmin['email']) {
+                        if (!filter_var($body['email'], FILTER_VALIDATE_EMAIL)) {
+                            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Valid email is required']));
+                            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                        }
+                        if ($this->adminModel->findByEmail($body['email'])) {
+                            $response->getBody()->write(json_encode(['success' => false, 'message' => 'Email already exists']));
+                            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                        }
+                    }
+
+                    $adminUpdate = [];
+                    foreach (['name', 'contact_name', 'phone', 'signature', 'email'] as $field) {
+                        if (array_key_exists($field, $body)) {
+                            $adminUpdate[$field] = $body[$field];
+                        }
+                    }
+
+                    if (!empty($body['password'])) {
+                        $adminUpdate['password'] = password_hash($body['password'], PASSWORD_BCRYPT);
+                    }
+
+                    if (empty($adminUpdate)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'No valid fields to update']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $result = $this->adminModel->update($id, $adminUpdate);
+                    break;
+
                 default:
                     $response->getBody()->write(json_encode(['success' => false, 'message' => 'Invalid user type']));
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -644,6 +860,7 @@ class UserManagementController
         try {
             $user = $request->getAttribute('user');
             $adminId = $this->resolveAdminId($request, $user);
+            $accountId = $this->getAccountId($request, $user);
             $id = $args['id'] ?? null;
             $query = $request->getQueryParams();
             $body = $request->getParsedBody() ?? [];
@@ -693,8 +910,8 @@ class UserManagementController
                     break;
 
                 case 'principal':
-                    if (!$this->isSuperAdmin($request, $user)) {
-                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can delete principal accounts']));
+                    if (!$this->adminModel->canCreatePrincipals($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only admins can delete principal accounts']));
                         return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
                     }
                     $principal = $this->adminModel->findPrincipalById($id, $adminId);
@@ -703,6 +920,30 @@ class UserManagementController
                         return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
                     }
                     $result = $this->adminModel->deletePrincipal($id, $adminId);
+                    break;
+
+                case 'admin':
+                    if (!$this->adminModel->isSuperAdmin($accountId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Only super admins can delete admin accounts']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                    }
+
+                    if ((int)$id === (int)$accountId) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'You cannot delete your own admin account']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $targetAdmin = $this->adminModel->findById($id);
+                    if (!$targetAdmin || ((int)$targetAdmin['id'] !== (int)$adminId && (int)($targetAdmin['parent_admin_id'] ?? 0) !== (int)$adminId)) {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'Admin not found']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                    }
+                    if (!empty($targetAdmin['is_super_admin']) || ($targetAdmin['role'] ?? '') === 'super_admin') {
+                        $response->getBody()->write(json_encode(['success' => false, 'message' => 'The super admin account cannot be deleted']));
+                        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                    }
+
+                    $result = $this->adminModel->delete($id);
                     break;
 
                 default:
@@ -730,7 +971,7 @@ class UserManagementController
     {
         try {
             $user = $request->getAttribute('user');
-            $adminId = $user->id;
+            $adminId = $this->resolveAdminId($request, $user);
             $teacherId = $args['id'] ?? null;
             $teacher = $this->teacherModel->findById($teacherId);
 
@@ -778,6 +1019,7 @@ class UserManagementController
         try {
             $user = $request->getAttribute('user');
             $adminId = $this->resolveAdminId($request, $user);
+            $rootAdminId = $this->adminModel->getRootAdminId((int)$adminId);
 
             $stats = [
                 'total_students' => $this->studentModel->count(['admin_id' => $adminId]),
@@ -789,7 +1031,8 @@ class UserManagementController
                     ? $this->adminModel->count(['parent_admin_id' => $adminId, 'role' => 'principal'])
                     : 0,
                 'total_medical_staff' => $this->medicalStaffModel->count(['admin_id' => $adminId]),
-                'total_parents' => $this->parentModel->countByAdmin($adminId, [])
+                'total_parents' => $this->parentModel->countByAdmin($adminId, []),
+                'total_admins' => count($this->adminModel->getAdminsBySchool($rootAdminId))
             ];
 
             $response->getBody()->write(json_encode(['success' => true, 'stats' => $stats, 'message' => 'User statistics fetched successfully']));
@@ -830,6 +1073,14 @@ class UserManagementController
                     'message' => 'Only super admins can perform this operation on principals'
                 ]));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+            }
+
+            if ($userType === 'admin') {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Bulk operations are not supported for admin accounts'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
             }
 
             if ($userType === 'parent' && $operation !== 'delete') {
@@ -894,7 +1145,7 @@ class UserManagementController
 
     private function isSuperAdmin(Request $request, $user): bool
     {
-        return strcasecmp($this->resolveRole($request, $user), 'Admin') === 0;
+        return $this->adminModel->isSuperAdmin($this->getAccountId($request, $user));
     }
 
     private function formatPrincipalRecord(array $record): array
@@ -906,6 +1157,20 @@ class UserManagementController
             'phone' => $record['phone'] ?? null,
             'role' => 'Principal',
             'signature' => $record['signature'] ?? null,
+            'created_at' => $record['created_at'] ?? null,
+            'updated_at' => $record['updated_at'] ?? null
+        ];
+    }
+
+    private function formatAdminRecord(array $record): array
+    {
+        return [
+            'id' => $record['id'],
+            'name' => $record['contact_name'] ?? $record['school_name'] ?? $record['email'],
+            'email' => $record['email'],
+            'phone' => $record['phone'] ?? $record['school_phone'] ?? null,
+            'role' => $record['role'] ?? 'admin',
+            'is_super_admin' => !empty($record['is_super_admin']) || (($record['role'] ?? '') === 'super_admin'),
             'created_at' => $record['created_at'] ?? null,
             'updated_at' => $record['updated_at'] ?? null
         ];
@@ -976,5 +1241,11 @@ class UserManagementController
         }
     }
 
+    private function getAccountId(Request $request, $user): int
+    {
+        return (int)($request->getAttribute('account_id') ?? ($user->account_id ?? $user->id));
+    }
+
     // Note: activity logging can be implemented via a dedicated service if needed
 }
+

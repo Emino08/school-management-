@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,8 +9,6 @@ import StudentRegistration from './townMaster/StudentRegistration';
 import TownAttendance from './townMaster/TownAttendance';
 import AttendanceAnalytics from './townMaster/AttendanceAnalytics';
 import TownStudents from './townMaster/TownStudents';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 const TownMasterPortal = () => {
   const { currentUser } = useSelector((state) => state.user);
@@ -25,7 +23,7 @@ const TownMasterPortal = () => {
   const fetchTownData = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/teacher/town-master/my-town`);
+      const response = await axios.get('/teacher/town-master/my-town');
       if (response.data.success) {
         setTownData(response.data.town);
       } else {

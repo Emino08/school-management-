@@ -11,6 +11,7 @@ import {
     getRequest,
     getFailed,
     getError,
+    setValidationErrors,
 } from './userSlice';
 
 export const loginUser = (fields, role) => async (dispatch) => {
@@ -25,7 +26,14 @@ export const loginUser = (fields, role) => async (dispatch) => {
             'Teacher': 'teachers'
         };
         const endpoint = `${import.meta.env.VITE_API_BASE_URL}/${roleMap[role]}/login`;
-        const result = await axios.post(endpoint, fields, {
+        const payload = { ...fields };
+        if (role === 'Principal') {
+            payload.loginAs = 'principal';
+        } else if (role === 'Admin') {
+            payload.loginAs = 'admin';
+        }
+
+        const result = await axios.post(endpoint, payload, {
             headers: { 'Content-Type': 'application/json' },
             // Avoid global 401 interceptor redirecting to "/" on deliberate auth failures
             skipAuthRedirect: true,
@@ -75,15 +83,19 @@ export const registerUser = (fields, role) => async (dispatch) => {
             headers: { 'Content-Type': 'application/json' },
         });
         if (result.data.schoolName) {
+            dispatch(setValidationErrors(null));
             dispatch(authSuccess(result.data));
         }
         else if (result.data.school) {
+            dispatch(setValidationErrors(null));
             dispatch(stuffAdded());
         }
         else {
             dispatch(authFailed(result.data.message));
+            dispatch(setValidationErrors(result.data.errors || null));
         }
     } catch (error) {
+        dispatch(setValidationErrors(null));
         dispatch(authError(error));
     }
 };

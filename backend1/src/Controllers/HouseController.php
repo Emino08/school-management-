@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Models\House;
 use App\Models\Student;
 use App\Models\FeesPayment;
@@ -11,6 +13,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 class HouseController
 {
+    use LogsActivity;
+
     private $houseModel;
     private $studentModel;
     private $feesModel;
@@ -400,3 +404,4 @@ class HouseController
         }
     }
 }
+

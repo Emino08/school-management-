@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { BarChart3, TrendingDown, AlertTriangle, Calendar, RefreshCw } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 const AttendanceAnalytics = ({ townData }) => {
   const [attendance, setAttendance] = useState([]);
@@ -47,7 +45,7 @@ const AttendanceAnalytics = ({ townData }) => {
       if (dateRange.end) params.append('end_date', dateRange.end);
 
       const response = await axios.get(
-        `${API_URL}/teacher/town-master/attendance?${params.toString()}`
+        `/teacher/town-master/attendance?${params.toString()}`
       );
       if (response.data.success) {
         let records = response.data.attendance || [];

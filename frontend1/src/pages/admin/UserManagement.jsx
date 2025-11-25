@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import axios from '@/redux/axiosConfig';
 import UserFormModal from './userManagement/UserFormModal';
@@ -12,8 +13,20 @@ import {
 
 const UserManagement = () => {
   const { currentUser } = useSelector((state) => state.user);
+  const [searchParams] = useSearchParams();
   const currentRole = (currentUser?.role || '').toLowerCase();
-  const canManagePrincipals = currentRole === 'admin';
+  const isSuperAdmin = Boolean(
+    currentUser?.account?.is_super_admin ||
+    currentUser?.admin?.is_super_admin ||
+    currentUser?.is_super_admin ||
+    currentUser?.permissions?.is_super_admin ||
+    currentUser?.permissions?.isSuperAdmin
+  );
+  const [superAdminVerified, setSuperAdminVerified] = useState(false);
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+  const effectiveSuperAdmin = isSuperAdmin || superAdminVerified;
+  const canManagePrincipals = currentRole === 'admin' || effectiveSuperAdmin;
+  const canManageAdmins = effectiveSuperAdmin;
   const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({});
@@ -27,13 +40,55 @@ const UserManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const disablePrincipalActions = activeTab === 'principals' && !canManagePrincipals;
+  const disableAdminActions = activeTab === 'admins' && !canManageAdmins;
   const isParentTab = activeTab === 'parents';
   const isMedicalTab = activeTab === 'medical';
-  const disableCreation = disablePrincipalActions || isParentTab;
+  const disableCreation = disablePrincipalActions || disableAdminActions || isParentTab;
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && tabs.some((t) => t.id === tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetchUserStats();
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSuperAdminStatus = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/admin/super-admin-status`);
+        if (!isMounted) return;
+        if (response.data?.success) {
+          const isSuper = Boolean(response.data.is_super_admin || response.data.can_create_admins);
+          setSuperAdminVerified(isSuper);
+        } else {
+          setSuperAdminVerified(false);
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error checking super admin status:', error);
+          setSuperAdminVerified(false);
+        }
+      }
+    };
+
+    if (!currentUser?.token) {
+      setSuperAdminVerified(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    fetchSuperAdminStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.token, API_BASE_URL]);
 
   useEffect(() => {
     if (activeTab !== 'overview') {
@@ -43,7 +98,7 @@ const UserManagement = () => {
 
   const fetchUserStats = async () => {
     try {
-      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/user-management/stats`);
+      const response = await axios.get(`${API_BASE_URL}/user-management/stats`);
       if (response.data.success) {
         setStats(response.data.stats || response.data.data);
       } else {
@@ -56,6 +111,11 @@ const UserManagement = () => {
   };
 
   const fetchUsers = async () => {
+    if (activeTab === 'admins' && !canManageAdmins) {
+      setUsers([]);
+      setTotalPages(1);
+      return;
+    }
     setLoading(true);
     try {
       const userTypeMap = {
@@ -63,12 +123,13 @@ const UserManagement = () => {
         teachers: 'teacher',
         finance: 'finance',
         principals: 'principal',
+        admins: 'admin',
         medical: 'medical',
         parents: 'parent',
         overview: 'all'
       };
 
-      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/user-management/users`, {
+      const response = await axios.get(`${API_BASE_URL}/user-management/users`, {
         params: {
           user_type: userTypeMap[activeTab] || 'all',
           search: searchTerm,
@@ -115,12 +176,16 @@ const UserManagement = () => {
       toast.error('Parents create their own accounts from the Parent Portal');
       return;
     }
+    if (activeTab === 'admins' && !canManageAdmins) {
+      toast.error('Only super administrators can create admin accounts');
+      return;
+    }
     if (activeTab === 'principals' && !canManagePrincipals) {
       toast.error('Only administrators can create principal accounts');
       return;
     }
     try {
-      const response = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/user-management/users`, formData);
+      const response = await axios.post(`${API_BASE_URL}/user-management/users`, formData);
 
       if (response.data.success) {
         setShowCreateModal(false);
@@ -141,9 +206,13 @@ const UserManagement = () => {
       toast.error('Only administrators can update principal accounts');
       return;
     }
+    if (activeTab === 'admins' && !canManageAdmins) {
+      toast.error('Only super administrators can update admin accounts');
+      return;
+    }
     try {
       const response = await axios.put(
-        `${import.meta.env.VITE_API_BASE_URL}/user-management/users/${editingUser.id}`,
+        `${API_BASE_URL}/user-management/users/${editingUser.id}`,
         formData
       );
 
@@ -166,12 +235,16 @@ const UserManagement = () => {
       toast.error('Only administrators can delete principal accounts');
       return;
     }
+    if (userType === 'admin' && !canManageAdmins) {
+      toast.error('Only super administrators can delete admin accounts');
+      return;
+    }
     if (!window.confirm('Are you sure you want to delete this user?')) {
       return;
     }
 
     try {
-      const response = await axios.delete(`${import.meta.env.VITE_API_BASE_URL}/user-management/users/${userId}`, {
+      const response = await axios.delete(`${API_BASE_URL}/user-management/users/${userId}`, {
         data: { user_type: userType }
       });
 
@@ -191,7 +264,7 @@ const UserManagement = () => {
   const handleToggleExamOfficer = async (teacherId) => {
     try {
       const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/user-management/teachers/${teacherId}/toggle-exam-officer`,
+        `${API_BASE_URL}/user-management/teachers/${teacherId}/toggle-exam-officer`,
         {}
       );
 
@@ -213,6 +286,10 @@ const UserManagement = () => {
       alert('Please select users first');
       return;
     }
+    if (activeTab === 'admins') {
+      toast.error('Bulk actions are not available for admin accounts');
+      return;
+    }
 
     if (!window.confirm(`Are you sure you want to ${operation} selected users?`)) {
       return;
@@ -224,12 +301,13 @@ const UserManagement = () => {
         teachers: 'teacher',
         finance: 'finance',
         principals: 'principal',
+        admins: 'admin',
         medical: 'medical',
         parents: 'parent'
       };
 
       const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/user-management/bulk-operation`,
+        `${API_BASE_URL}/user-management/bulk-operation`,
         {
           operation,
           user_type: userTypeMap[activeTab],
@@ -259,6 +337,7 @@ const UserManagement = () => {
     { id: 'finance', label: 'Finance Users', icon: FiDollarSign },
     { id: 'medical', label: 'Medical Staff', icon: FiHeart },
     { id: 'parents', label: 'Parents', icon: FiUserCheck },
+    { id: 'admins', label: 'Admins', icon: FiShield },
     { id: 'principals', label: 'Principals', icon: FiShield }
   ];
 
@@ -274,7 +353,7 @@ const UserManagement = () => {
             User Management
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Manage students, teachers, finance users, medical staff, parents, and permissions
+            Manage students, teachers, finance users, medical staff, parents, admins, principals, and permissions
           </p>
         </div>
 
@@ -355,6 +434,13 @@ const UserManagement = () => {
               value={stats.exam_officers || 0}
               icon={FiShield}
               color="orange"
+            />
+            <StatCard
+              title="Admin Accounts"
+              value={stats.total_admins || 0}
+              icon={FiShield}
+              color="purple"
+              onClick={() => setActiveTab('admins')}
             />
             <StatCard
               title="Principal Accounts"
@@ -449,6 +535,12 @@ const UserManagement = () => {
               </div>
             )}
 
+            {disableAdminActions && (
+              <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                Admin accounts can only be managed by the super administrator.
+              </div>
+            )}
+
             {disablePrincipalActions && (
               <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
                 Principal accounts are managed by the super administrator. Please contact your admin for changes.
@@ -473,7 +565,11 @@ const UserManagement = () => {
                   );
                 }}
                 onSelectAll={(selectAll) => {
-                  setSelectedUsers(selectAll ? users.map((u) => u.id) : []);
+                  const selectableIds =
+                    activeTab === 'admins'
+                      ? users.filter((u) => !u.is_super_admin).map((u) => u.id)
+                      : users.map((u) => u.id);
+                  setSelectedUsers(selectAll ? selectableIds : []);
                 }}
                 onEdit={(user) => {
                   if (activeTab === 'principals' && !canManagePrincipals) {
@@ -486,6 +582,7 @@ const UserManagement = () => {
                 onDelete={handleDeleteUser}
                 onToggleExamOfficer={handleToggleExamOfficer}
                 canManagePrincipals={canManagePrincipals}
+                canManageAdmins={canManageAdmins}
               />
             )}
 
@@ -577,11 +674,16 @@ const UserTable = ({
   onEdit,
   onDelete,
   onToggleExamOfficer,
-  canManagePrincipals
+  canManagePrincipals,
+  canManageAdmins
 }) => {
-  const allSelected = users.length > 0 && users.every((u) => selectedUsers.includes(u.id));
   const isPrincipalTab = userType === 'principals';
+  const isAdminTab = userType === 'admins';
+  const selectableUsers = users.filter((u) => !(isAdminTab && u.is_super_admin));
+  const allSelected = selectableUsers.length > 0 && selectableUsers.every((u) => selectedUsers.includes(u.id));
   const allowPrincipalActions = !isPrincipalTab || canManagePrincipals;
+  const allowAdminActions = !isAdminTab || canManageAdmins;
+  const allowActions = allowPrincipalActions && allowAdminActions;
 
   const getUserTypeName = () => {
     switch (userType) {
@@ -590,6 +692,7 @@ const UserTable = ({
       case 'finance': return 'finance';
       case 'medical': return 'medical';
       case 'parents': return 'parent';
+      case 'admins': return 'admin';
       case 'principals': return 'principal';
       default: return 'user';
     }
@@ -606,11 +709,11 @@ const UserTable = ({
                   type="checkbox"
                   checked={allSelected}
                   onChange={(e) => {
-                    if (!allowPrincipalActions && isPrincipalTab) return;
+                    if (!allowActions) return;
                     onSelectAll(e.target.checked);
                   }}
                   className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                  disabled={!allowPrincipalActions && isPrincipalTab}
+                  disabled={!allowActions}
                 />
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -619,6 +722,16 @@ const UserTable = ({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Email
               </th>
+              {userType === 'admins' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Role
+                </th>
+              )}
+              {userType === 'admins' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Phone
+                </th>
+              )}
               {userType === 'principals' && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Phone
@@ -664,24 +777,32 @@ const UserTable = ({
                   Status
                 </th>
               )}
+              {userType === 'admins' && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Created
+                </th>
+              )}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {users.map((user) => (
+            {users.map((user) => {
+              const disableRowActions = isAdminTab && user.is_super_admin;
+              const rowActionsAllowed = allowActions && !disableRowActions;
+              return (
               <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4">
                   <input
                     type="checkbox"
                     checked={selectedUsers.includes(user.id)}
                     onChange={() => {
-                      if (!allowPrincipalActions && isPrincipalTab) return;
+                      if (!rowActionsAllowed) return;
                       onSelectUser(user.id);
                     }}
                     className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                    disabled={!allowPrincipalActions && isPrincipalTab}
+                    disabled={!rowActionsAllowed}
                   />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -699,6 +820,26 @@ const UserTable = ({
                     {user.email || 'N/A'}
                   </div>
                 </td>
+                {userType === 'admins' && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        user.is_super_admin
+                          ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                          : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      }`}
+                    >
+                      {user.is_super_admin ? 'Super Admin' : 'Admin'}
+                    </span>
+                  </td>
+                )}
+                {userType === 'admins' && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.phone || 'N/A'}
+                    </div>
+                  </td>
+                )}
                 {(userType === 'medical' || userType === 'parents') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -783,8 +924,15 @@ const UserTable = ({
                     </span>
                   </td>
                 )}
+                {userType === 'admins' && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
+                    </div>
+                  </td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  {allowPrincipalActions ? (
+                  {rowActionsAllowed ? (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => onEdit(user)}
@@ -806,7 +954,8 @@ const UserTable = ({
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

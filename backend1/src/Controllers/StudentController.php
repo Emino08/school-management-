@@ -12,9 +12,14 @@ use App\Models\Attendance;
 use App\Models\ClassModel;
 use App\Utils\JWT;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
+use App\Traits\ResolvesAdminId;
 
 class StudentController
 {
+    use LogsActivity;
+    use ResolvesAdminId;
+    
     private $studentModel;
     private $enrollmentModel;
     private $academicYearModel;
@@ -36,6 +41,9 @@ class StudentController
     {
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
+        $adminId = $this->getAdminId($request, $user);
+        $adminId = $this->getAdminId($request, $user);
 
         // Normalize common alternative field names from frontend
         if (isset($data['id_number']) && !isset($data['roll_number'])) {
@@ -83,7 +91,7 @@ class StudentController
         }
 
         // Check if ID number already exists for this school
-        $existing = $this->studentModel->findByIdNumber($user->id, $data['roll_number']);
+        $existing = $this->studentModel->findByIdNumber($adminId, $data['roll_number']);
         if ($existing) {
             $response->getBody()->write(json_encode([
                 'success' => false,
@@ -97,11 +105,12 @@ class StudentController
 
             // Build safe insert payload
             $studentData = [
-                'admin_id'      => $user->id,
+                'admin_id'      => $adminId,
                 'first_name'    => $data['first_name'],
                 'last_name'     => $data['last_name'],
                 'name'          => $data['name'],
                 'id_number'     => $data['roll_number'], // normalized to roll_number above
+                'roll_number'   => $data['roll_number'], // Keep both for compatibility
                 'email'         => $data['email'] ?? null,
                 'password'      => $data['password'],
                 'date_of_birth' => $data['date_of_birth'] ?? null,
@@ -110,15 +119,14 @@ class StudentController
                 'phone'         => $data['phone'] ?? null,
                 'parent_name'   => $data['parent_name'] ?? null,
                 'parent_phone'  => $data['parent_phone'] ?? null,
+                'class_id'      => $classId,
+                'status'        => 'active'
             ];
-
-            // Backward-compat: if old roll_number column still exists, include it
-            $studentData['roll_number'] = $studentData['id_number'];
 
             $studentId = $this->studentModel->createStudent(Validator::sanitize($studentData));
 
             // Enroll student in current academic year
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             if ($currentYear) {
                 $this->enrollmentModel->enrollStudent([
                     'student_id' => $studentId,
@@ -127,6 +135,19 @@ class StudentController
                     'status' => 'active'
                 ]);
             }
+
+            // Clear dashboard cache
+            \App\Controllers\AdminController::clearDashboardCache($adminId);
+
+            // Log activity
+            $this->logActivity(
+                $request,
+                'create',
+                "Created new student: {$data['first_name']} {$data['last_name']}",
+                'student',
+                $studentId,
+                ['student_name' => $data['first_name'] . ' ' . $data['last_name'], 'class_id' => $classId]
+            );
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -174,7 +195,7 @@ class StudentController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
         }
 
-        // Find student by email or roll number
+        // Find student by email or id number
         $student = isset($data['email']) ?
             $this->studentModel->findByEmail($data['email']) :
             $this->studentModel->findOne(['id_number' => $data['roll_number']]);
@@ -346,6 +367,8 @@ class StudentController
     {
         $studentId = $args['id'];
         $data = Validator::sanitize($request->getParsedBody());
+        $user = $request->getAttribute('user');
+        
         $student = $this->studentModel->findById($studentId);
         if (!$student) {
             $response->getBody()->write(json_encode([
@@ -355,6 +378,9 @@ class StudentController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
         }
 
+        // Handle class change separately
+        $newClassId = $data['class_id'] ?? $data['sclassName'] ?? null;
+        
         // Remove password from update if not provided
         if (isset($data['password']) && !empty($data['password'])) {
             $data['password'] = password_hash($data['password'], PASSWORD_BCRYPT);
@@ -362,8 +388,8 @@ class StudentController
             unset($data['password']);
         }
 
-        // Remove protected fields
-        unset($data['id'], $data['admin_id'], $data['roll_number'], $data['id_number']);
+        // Remove protected fields and class_id (handled separately)
+        unset($data['id'], $data['admin_id'], $data['roll_number'], $data['id_number'], $data['class_id'], $data['sclassName']);
 
         if (!empty($data['name']) && (empty($data['first_name']) || empty($data['last_name']))) {
             $nameParts = $this->extractNameParts($data);
@@ -377,7 +403,54 @@ class StudentController
         }
 
         try {
-            $this->studentModel->update($studentId, $data);
+            // Update student basic info
+            if (!empty($data)) {
+                $this->studentModel->update($studentId, $data);
+            }
+
+            // Handle class enrollment update
+            if ($newClassId !== null && is_numeric($newClassId)) {
+                $adminId = $user->admin_id ?? $user->id;
+                $currentYear = $this->academicYearModel->getCurrentYear($adminId);
+                
+                if ($currentYear) {
+                    // Check if enrollment exists
+                    $existingEnrollment = $this->enrollmentModel->findOne([
+                        'student_id' => $studentId,
+                        'academic_year_id' => $currentYear['id']
+                    ]);
+                    
+                    if ($existingEnrollment) {
+                        // Update existing enrollment
+                        $this->enrollmentModel->update($existingEnrollment['id'], [
+                            'class_id' => $newClassId,
+                            'status' => 'active'
+                        ]);
+                    } else {
+                        // Create new enrollment
+                        $this->enrollmentModel->create([
+                            'student_id' => $studentId,
+                            'class_id' => $newClassId,
+                            'academic_year_id' => $currentYear['id'],
+                            'status' => 'active'
+                        ]);
+                    }
+                }
+            }
+
+            // Clear dashboard cache
+            $adminId = $user->admin_id ?? $user->id;
+            \App\Controllers\AdminController::clearDashboardCache($adminId);
+
+            // Log activity
+            $this->logActivity(
+                $request,
+                'update',
+                "Updated student information (ID: {$studentId})",
+                'student',
+                $studentId,
+                ['updated_fields' => array_keys($data)]
+            );
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -528,9 +601,28 @@ class StudentController
     public function deleteStudent(Request $request, Response $response, $args)
     {
         $studentId = $args['id'];
+        $user = $request->getAttribute('user');
 
         try {
+            // Get student to find admin_id before deleting
+            $student = $this->studentModel->findById($studentId);
+            $adminId = $student['admin_id'] ?? ($user->admin_id ?? $user->id);
+            $studentName = ($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? '');
+            
             $this->studentModel->delete($studentId);
+
+            // Clear dashboard cache
+            \App\Controllers\AdminController::clearDashboardCache($adminId);
+
+            // Log activity
+            $this->logActivity(
+                $request,
+                'delete',
+                "Deleted student: {$studentName} (ID: {$studentId})",
+                'student',
+                $studentId,
+                ['student_name' => $studentName]
+            );
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -633,7 +725,7 @@ class StudentController
         $created = 0; $failed = 0; $errors = [];
 
         // Determine current academic year for enrollment
-        $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+        $currentYear = $this->academicYearModel->getCurrentYear($adminId);
         $academicYearId = $currentYear['id'] ?? null;
 
         foreach ($rows as $row) {
@@ -668,7 +760,7 @@ class StudentController
                 $classId = (int)$data['class_id'];
             } elseif (!empty($data['class_name'])) {
                 // Find class by name for this admin
-                $classes = $this->classModel->findAll(['admin_id' => $user->id]);
+                $classes = $this->classModel->findAll(['admin_id' => $adminId]);
                 $match = null;
                 foreach ($classes as $cls) {
                     if (strcasecmp($cls['class_name'], $data['class_name']) === 0) { $match = $cls; break; }
@@ -679,7 +771,7 @@ class StudentController
             try {
                 // Create student
                 $studentPayload = [
-                    'admin_id'      => $user->id,
+                    'admin_id' => $adminId,
                     'first_name'    => $firstName,
                     'last_name'     => $lastName,
                     'name'          => $fullName,
@@ -796,7 +888,7 @@ class StudentController
         $user = $request->getAttribute('user');
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $students = $this->studentModel->getStudentsByClass(
                 $classId,
                 $currentYear ? $currentYear['id'] : null
@@ -822,7 +914,7 @@ class StudentController
         $user = $request->getAttribute('user');
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $grades = $this->gradeModel->getStudentGrades(
                 $studentId,
                 $currentYear ? $currentYear['id'] : null
@@ -848,7 +940,7 @@ class StudentController
         $user = $request->getAttribute('user');
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $stats = $this->attendanceModel->getAttendanceStats(
                 $studentId,
                 $currentYear ? $currentYear['id'] : null

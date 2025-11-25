@@ -1,47 +1,69 @@
 import axios from 'axios';
 
-const parseList = (value) =>
-  (value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+const DEFAULT_LOCAL_BASE = 'http://localhost:8080/api';
 
 const resolveBaseUrl = () => {
-  const defaultLocal = 'http://localhost:8080/api';
-  const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
-  const nodeEnv = typeof process !== 'undefined' ? process.env : undefined;
+  const env = typeof import.meta !== 'undefined' ? import.meta.env : {};
+  const nodeEnv = typeof process !== 'undefined' ? process.env : {};
 
-  const prodBase =
-    (env && env.VITE_API_BASE_URL) ||
-    (nodeEnv && nodeEnv.REACT_APP_BASE_URL) ||
-    '';
+  const productionBase =
+    env.VITE_API_BASE_URL || nodeEnv.REACT_APP_BASE_URL || '';
+  const developmentBase =
+    env.VITE_API_BASE_URL_LOCAL || nodeEnv.REACT_APP_BASE_URL_LOCAL || '';
 
-  const localOverride =
-    (env && env.VITE_API_BASE_URL_LOCAL) ||
-    (nodeEnv && nodeEnv.REACT_APP_BASE_URL_LOCAL) ||
-    '';
+  const mode = (env.MODE || nodeEnv.NODE_ENV || '').toLowerCase();
+  const isDev = env.DEV || mode.includes('dev');
+  const isProd = env.PROD || mode === 'production';
 
-  const parsedHosts = parseList(env?.VITE_PRODUCTION_HOSTS);
-  const productionHosts =
-    parsedHosts.length > 0
-      ? parsedHosts
-      : ['boschool.org', 'www.boschool.org', 'backend.boschool.org'];
-
-  const isBrowser = typeof window !== 'undefined';
-  const hostname = isBrowser ? window.location.hostname : '';
-  const isProductionHost = hostname && productionHosts.includes(hostname);
-
-  if (!hostname || !isProductionHost) {
-    return localOverride || defaultLocal;
+  if (isDev) {
+    return developmentBase || productionBase || DEFAULT_LOCAL_BASE;
   }
 
-  return prodBase || defaultLocal;
+  if (isProd) {
+    return productionBase || developmentBase || DEFAULT_LOCAL_BASE;
+  }
+
+  const isBrowser = typeof window !== 'undefined';
+  const hostname = isBrowser ? window.location.hostname || '' : '';
+  const hostOrigin = isBrowser ? `${window.location.protocol}//${hostname}` : '';
+  const hostBase = hostname ? `${hostOrigin.replace(/\/$/, '')}/api` : '';
+
+  if (hostname && !hostname.includes('localhost') && !hostname.startsWith('127.')) {
+    return productionBase || developmentBase || hostBase || DEFAULT_LOCAL_BASE;
+  }
+
+  const fallback = hostBase || DEFAULT_LOCAL_BASE;
+  return developmentBase || productionBase || fallback;
 };
 
 const apiBase = resolveBaseUrl();
 if (apiBase) {
   axios.defaults.baseURL = apiBase;
 }
+
+const deriveFixAuthUrl = (baseUrl) => {
+  const fallback = 'http://localhost:8080/fix-auth.html';
+
+  if (!baseUrl) {
+    return fallback;
+  }
+
+  try {
+    const url = new URL(baseUrl);
+    url.pathname = url.pathname.replace(/\/api\/?$/, '');
+    if (!url.pathname.endsWith('/')) {
+      url.pathname += '/';
+    }
+    url.pathname += 'fix-auth.html';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const authFixUrl = deriveFixAuthUrl(apiBase);
 
 // Add a request interceptor to attach JWT token to all requests
 axios.interceptors.request.use(
@@ -102,7 +124,7 @@ axios.interceptors.response.use(
                 });
                 
                 // Show alert with helpful message
-                const fixUrl = 'http://localhost:8080/fix-auth.html';
+                const fixUrl = authFixUrl;
                 const shouldRedirectToFix = confirm(
                     'Your session has expired or is invalid.\n\n' +
                     'Click OK to go to the authentication fix page, or Cancel to stay on the login page.'
@@ -119,4 +141,6 @@ axios.interceptors.response.use(
     }
 );
 
+export const API_BASE_URL = apiBase;
+export { resolveBaseUrl };
 export default axios;

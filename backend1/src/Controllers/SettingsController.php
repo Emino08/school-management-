@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Config\Database;
 use PDO;
 use PDOException;
@@ -11,6 +13,8 @@ use Slim\Psr7\Stream;
 
 class SettingsController
 {
+    use LogsActivity;
+
     private $db;
     private $defaultGeneral = [
         'school_name' => '',
@@ -394,9 +398,15 @@ class SettingsController
     {
         try {
             $data = json_decode($request->getBody()->getContents(), true);
-            $testEmail = $data['email'] ?? null;
+            $testEmail = $data['to'] ?? $data['email'] ?? null;
+            $subject = $data['subject'] ?? 'Test Email from School Management System';
+            $message = $data['message'] ?? null;
+
+            // Log the request
+            error_log('Test email request received for: ' . $testEmail);
 
             if (!$testEmail || !filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
+                error_log('Invalid email address provided: ' . ($testEmail ?? 'null'));
                 $response->getBody()->write(json_encode([
                     'success' => false,
                     'message' => 'Valid email address is required'
@@ -405,37 +415,57 @@ class SettingsController
             }
 
             $mailer = new \App\Utils\Mailer();
-            
+
             // Test SMTP connection first
+            error_log('Testing SMTP connection...');
             $connectionTest = $mailer->testConnection();
             if (!$connectionTest['success']) {
+                error_log('SMTP Connection Failed: ' . $connectionTest['message']);
                 $response->getBody()->write(json_encode([
                     'success' => false,
                     'message' => 'SMTP Connection Failed: ' . $connectionTest['message']
                 ]));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
             }
+            error_log('SMTP connection successful');
 
-            // Send test email
-            $subject = 'Test Email from School Management System';
-            $body = '
-                <h2>Email Configuration Test</h2>
-                <p>This is a test email to verify your email configuration is working correctly.</p>
-                <p>If you received this email, your SMTP settings are configured properly!</p>
-                <p>Sent at: ' . date('Y-m-d H:i:s') . '</p>
-            ';
+            // Build email body
+            if ($message) {
+                // Use custom message with HTML formatting
+                $body = '
+                    <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+                        <h2 style="color: #333;">' . htmlspecialchars($subject) . '</h2>
+                        <div style="margin: 20px 0; line-height: 1.6;">
+                            ' . nl2br(htmlspecialchars($message)) . '
+                        </div>
+                        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+                        <p style="color: #666; font-size: 12px;">Sent at: ' . date('Y-m-d H:i:s') . '</p>
+                    </div>
+                ';
+            } else {
+                // Default test email body
+                $body = '
+                    <h2>Email Configuration Test</h2>
+                    <p>This is a test email to verify your email configuration is working correctly.</p>
+                    <p>If you received this email, your SMTP settings are configured properly!</p>
+                    <p>Sent at: ' . date('Y-m-d H:i:s') . '</p>
+                ';
+            }
 
+            error_log('Attempting to send test email...');
             $sent = $mailer->send($testEmail, $subject, $body);
 
             if ($sent) {
+                error_log('Test email sent successfully to: ' . $testEmail);
                 $response->getBody()->write(json_encode([
                     'success' => true,
                     'message' => 'Test email sent successfully to ' . $testEmail
                 ]));
             } else {
+                error_log('Failed to send test email to: ' . $testEmail);
                 $response->getBody()->write(json_encode([
                     'success' => false,
-                    'message' => 'Failed to send test email'
+                    'message' => 'Failed to send test email. Please check your email logs for details.'
                 ]));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
             }
@@ -443,6 +473,8 @@ class SettingsController
             return $response->withHeader('Content-Type', 'application/json');
 
         } catch (\Exception $e) {
+            error_log('Test email exception: ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
             $response->getBody()->write(json_encode([
                 'success' => false,
                 'message' => 'Error: ' . $e->getMessage()
@@ -603,3 +635,4 @@ class SettingsController
         }
     }
 }
+

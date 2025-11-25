@@ -24,7 +24,6 @@ class ClassModel extends BaseModel
                 FROM {$this->table} c
                 LEFT JOIN student_enrollments se ON c.id = se.class_id
                     AND se.academic_year_id = :academic_year_id
-                    AND se.status = 'active'
                 LEFT JOIN subjects s ON c.id = s.class_id
                 WHERE c.admin_id = :admin_id
                 GROUP BY c.id
@@ -67,7 +66,6 @@ class ClassModel extends BaseModel
                 FROM {$this->table} c
                 LEFT JOIN student_enrollments se ON c.id = se.class_id
                     AND se.academic_year_id = :academic_year_id
-                    AND se.status = 'active'
                 LEFT JOIN subjects s ON c.id = s.class_id
                 WHERE c.id = :class_id{$adminFilter}
                 GROUP BY c.id

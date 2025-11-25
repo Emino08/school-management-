@@ -64,4 +64,10 @@ class Database
     {
         throw new \Exception("Cannot unserialize singleton");
     }
+    
+    // Reset instance for testing (use carefully)
+    public static function resetInstance()
+    {
+        self::$instance = null;
+    }
 }

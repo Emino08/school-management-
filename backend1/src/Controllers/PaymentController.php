@@ -2,12 +2,16 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Config\Database;
 use PDO;
 use PDOException;
 
 class PaymentController
 {
+    use LogsActivity;
+
     private $db;
 
     public function __construct()
@@ -706,3 +710,4 @@ class PaymentController
         }
     }
 }
+

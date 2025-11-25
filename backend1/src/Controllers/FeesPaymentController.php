@@ -7,9 +7,14 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\FeesPayment;
 use App\Models\AcademicYear;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
+use App\Traits\ResolvesAdminId;
 
 class FeesPaymentController
 {
+    use LogsActivity;
+    use ResolvesAdminId;
+
     private $feesModel;
     private $academicYearModel;
 
@@ -31,7 +36,7 @@ class FeesPaymentController
         }
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $data['academic_year_id'] = $currentYear['id'];
 
             // Map numeric term to schema terms
@@ -65,7 +70,21 @@ class FeesPaymentController
 
             $paymentId = $this->feesModel->create(Validator::sanitize($data));
 
-            $response->getBody()->write(json_encode(['success' => true, 'message' => 'Payment recorded successfully', 'payment_id' => $paymentId]));
+            // Log payment
+            $this->logActivity(
+                $request,
+                'payment',
+                "Payment recorded: {$data['amount']}",
+                'payment',
+                $paymentId ?? null,
+                ['amount' => $data['amount']]
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Payment recorded successfully',
+                'payment_id' => $paymentId
+            ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
         } catch (\Exception $e) {
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Failed to record payment: ' . $e->getMessage()]));
@@ -78,7 +97,7 @@ class FeesPaymentController
         $user = $request->getAttribute('user');
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $payments = $this->feesModel->getStudentPayments($args['studentId'], $currentYear ? $currentYear['id'] : null);
 
             $response->getBody()->write(json_encode(['success' => true, 'payments' => $payments]));
@@ -94,7 +113,7 @@ class FeesPaymentController
         $user = $request->getAttribute('user');
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $payments = $this->feesModel->getPaymentsByTerm($user->id, $currentYear ? $currentYear['id'] : null, $args['term']);
 
             $response->getBody()->write(json_encode(['success' => true, 'payments' => $payments]));
@@ -124,7 +143,7 @@ class FeesPaymentController
                     LEFT JOIN classes c ON se.class_id = c.id
                     WHERE s.admin_id = :admin_id";
 
-            $bindings = [':admin_id' => $user->id];
+            $bindings = [':admin_id' => $adminId];
 
             if ($academicYearId) {
                 $sql .= " AND fp.academic_year_id = :academic_year_id";
@@ -160,7 +179,7 @@ class FeesPaymentController
 
         try {
             if (!$academicYearId) {
-                $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+                $currentYear = $this->academicYearModel->getCurrentYear($adminId);
                 $academicYearId = $currentYear ? $currentYear['id'] : null;
             }
             $stats = $this->feesModel->getPaymentStats($academicYearId, $term);
@@ -200,6 +219,8 @@ class FeesPaymentController
         }
     }
 }
+
+
 
 
 

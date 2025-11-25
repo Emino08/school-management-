@@ -6,9 +6,12 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\Complaint;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 
 class ComplaintController
 {
+    use LogsActivity;
+
     private $complaintModel;
 
     public function __construct()
@@ -56,7 +59,20 @@ class ComplaintController
 
             $complaintId = $this->complaintModel->create(Validator::sanitize($complaintData));
 
-            $response->getBody()->write(json_encode(['success' => true, 'message' => 'Complaint submitted successfully', 'complaint_id' => $complaintId]));
+            // Log complaint
+            $this->logActivity(
+                $request,
+                'create',
+                "Complaint submitted",
+                'complaint',
+                $complaintId ?? null
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Complaint submitted successfully',
+                'complaint_id' => $complaintId
+            ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
         } catch (\Exception $e) {
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Submission failed: ' . $e->getMessage()]));
@@ -213,3 +229,5 @@ class ComplaintController
         return $request->getAttribute('admin_id') ?? ($user->admin_id ?? $user->id);
     }
 }
+
+

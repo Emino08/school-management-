@@ -39,7 +39,7 @@ import {
   updateTimetableEntry,
   deleteTimetableEntry,
 } from '../../../redux/timetableRelated/timetableHandle';
-import { getAllSclasses } from '../../../redux/sclassRelated/sclassHandle';
+import { getAllSclasses, getClassSubjects as fetchClassSubjects } from '../../../redux/sclassRelated/sclassHandle';
 import { getAllTeachers } from '../../../redux/teacherRelated/teacherHandle';
 import { getAllAcademicYears } from '../../../redux/academicYearRelated/academicYearHandle';
 import TimetableGrid from '../../../components/timetable/TimetableGrid';
@@ -49,7 +49,7 @@ const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const TimetableManagement = () => {
   const dispatch = useDispatch();
   const { currentUser } = useSelector((state) => state.user);
-  const { sclassesList } = useSelector((state) => state.sclass);
+  const { sclassesList, subjectsList } = useSelector((state) => state.sclass);
   const { teachersList } = useSelector((state) => state.teacher);
   const { academicYearData: academicYearsList } = useSelector((state) => state.academicYear);
   const { groupedTimetable, loading, error, response } = useSelector(
@@ -68,11 +68,27 @@ const TimetableManagement = () => {
     subject_id: '',
     teacher_id: '',
     day_of_week: '',
-    start_time: '',
-    end_time: '',
+    start_time: '08:00',
+    end_time: '09:00',
     room_number: '',
     notes: '',
   });
+
+  const toHHMM = (timeValue) => {
+    if (!timeValue) return '';
+    // Accept HH:MM or HH:MM:SS, return HH:MM
+    const match = /(\d{1,2}):(\d{2})/.exec(timeValue);
+    if (match) {
+      const hours = match[1].padStart(2, '0');
+      const minutes = match[2];
+      return `${hours}:${minutes}`;
+    }
+    // Fallback to first 5 characters if colon present
+    if (timeValue.includes(':') && timeValue.length >= 5) {
+      return timeValue.slice(0, 5);
+    }
+    return '';
+  };
 
   useEffect(() => {
     dispatch(getAllSclasses());
@@ -85,6 +101,19 @@ const TimetableManagement = () => {
       dispatch(getClassTimetable(selectedClass));
     }
   }, [dispatch, selectedClass, selectedAcademicYear]);
+
+  // Load subjects for the selected class so the modal has options
+  useEffect(() => {
+    if (selectedClass) {
+      dispatch(fetchClassSubjects(selectedClass));
+      setFormData((prev) => ({
+        ...prev,
+        class_id: selectedClass,
+        subject_id: '',
+        teacher_id: '',
+      }));
+    }
+  }, [dispatch, selectedClass]);
 
   useEffect(() => {
     if (response) {
@@ -112,21 +141,25 @@ const TimetableManagement = () => {
       subject_id: '',
       teacher_id: '',
       day_of_week: '',
-      start_time: '',
-      end_time: '',
+      start_time: '08:00',
+      end_time: '09:00',
       room_number: '',
       notes: '',
     });
   };
 
   const handleCreateEntry = async () => {
+    const normalizedStart = toHHMM(formData.start_time);
+    const normalizedEnd = toHHMM(formData.end_time);
+
     if (
       !formData.class_id ||
       !formData.subject_id ||
       !formData.teacher_id ||
+      !selectedAcademicYear ||
       !formData.day_of_week ||
-      !formData.start_time ||
-      !formData.end_time
+      !normalizedStart ||
+      !normalizedEnd
     ) {
       toast.error('Please fill in all required fields');
       return;
@@ -139,8 +172,8 @@ const TimetableManagement = () => {
       subject_id: parseInt(formData.subject_id),
       teacher_id: parseInt(formData.teacher_id),
       day_of_week: formData.day_of_week,
-      start_time: formData.start_time,
-      end_time: formData.end_time,
+      start_time: normalizedStart,
+      end_time: normalizedEnd,
       room_number: formData.room_number,
       notes: formData.notes,
     };
@@ -157,8 +190,8 @@ const TimetableManagement = () => {
       subject_id: entry.subject_id?.toString() || '',
       teacher_id: entry.teacher_id?.toString() || '',
       day_of_week: entry.day_of_week,
-      start_time: entry.start_time.substring(0, 5),
-      end_time: entry.end_time.substring(0, 5),
+      start_time: toHHMM(entry.start_time),
+      end_time: toHHMM(entry.end_time),
       room_number: entry.room_number || '',
       notes: entry.notes || '',
     });
@@ -168,6 +201,22 @@ const TimetableManagement = () => {
   const handleUpdateEntry = async () => {
     if (!selectedEntry) return;
 
+    const normalizedStart = toHHMM(formData.start_time);
+    const normalizedEnd = toHHMM(formData.end_time);
+
+    if (
+      !formData.class_id ||
+      !formData.subject_id ||
+      !formData.teacher_id ||
+      !selectedAcademicYear ||
+      !formData.day_of_week ||
+      !normalizedStart ||
+      !normalizedEnd
+    ) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     const entryData = {
       admin_id: currentUser.id,
       academic_year_id: selectedAcademicYear,
@@ -175,8 +224,8 @@ const TimetableManagement = () => {
       subject_id: parseInt(formData.subject_id),
       teacher_id: parseInt(formData.teacher_id),
       day_of_week: formData.day_of_week,
-      start_time: formData.start_time,
-      end_time: formData.end_time,
+      start_time: normalizedStart,
+      end_time: normalizedEnd,
       room_number: formData.room_number,
       notes: formData.notes,
     };
@@ -200,10 +249,57 @@ const TimetableManagement = () => {
   };
 
   // Get subjects for selected class
-  const getClassSubjects = () => {
+  const getClassSubjectOptions = () => {
+    const normalize = (subject) => {
+      const id = subject?.id ?? subject?._id;
+      const name =
+        subject?.subName ||
+        subject?.subject_name ||
+        subject?.subjectName ||
+        subject?.name ||
+        '';
+      return { ...subject, id, subName: name };
+    };
+
+    const globalSubjects = Array.isArray(subjectsList) ? subjectsList.map(normalize) : [];
+    if (globalSubjects.length > 0) return globalSubjects.filter((s) => s.id);
+
     if (!selectedClass || !sclassesList) return [];
     const classObj = sclassesList.find((c) => c.id?.toString() === selectedClass.toString());
-    return classObj?.subjects || [];
+    const clsSubjects = Array.isArray(classObj?.subjects) ? classObj.subjects.map(normalize) : [];
+    return clsSubjects.filter((s) => s.id);
+  };
+
+  const getTeacherOptions = () => {
+    const classSubjects = getClassSubjectOptions();
+    const teacherMap = new Map();
+    classSubjects.forEach((subj) => {
+      if (subj.teacher_id || subj.teacherId || subj.teacherIdAssigned) {
+        const tid = subj.teacher_id || subj.teacherId || subj.teacherIdAssigned;
+        const tname = subj.teacher_name || subj.teacherName || subj.teacher || teachersList?.find((t) => t.id === tid)?.name;
+        if (tid && tname && !teacherMap.has(tid.toString())) {
+          teacherMap.set(tid.toString(), { id: tid.toString(), name: tname });
+        }
+      }
+    });
+
+    if (teacherMap.size > 0) {
+      return Array.from(teacherMap.values());
+    }
+
+    // Fallback to all teachers if subjects have no teacher assignment
+    return Array.isArray(teachersList)
+      ? teachersList.map((t) => ({ id: t.id?.toString(), name: t.name }))
+      : [];
+  };
+
+  const getFilteredSubjectsForTeacher = () => {
+    const subjects = getClassSubjectOptions();
+    if (!formData.teacher_id) return subjects;
+    return subjects.filter((s) => {
+      const tid = s.teacher_id || s.teacherId || s.teacherIdAssigned;
+      return tid && tid.toString() === formData.teacher_id.toString();
+    });
   };
 
   return (
@@ -373,20 +469,71 @@ const TimetableManagement = () => {
       {/* Create Entry Dialog */}
       <AlertDialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <AlertDialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Add Timetable Entry</AlertDialogTitle>
-            <AlertDialogDescription>
-              Create a new timetable entry for the selected class.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Add Timetable Entry</AlertDialogTitle>
+        <AlertDialogDescription>
+          Create a new timetable entry for the selected class.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Day of Week</Label>
-                <Select
-                  value={formData.day_of_week}
-                  onValueChange={(value) => handleInputChange('day_of_week', value)}
+      <div className="space-y-4 py-4">
+        <div className="space-y-3">
+          <div>
+            <Label>Class</Label>
+            <Select
+              value={formData.class_id || selectedClass}
+              onValueChange={(value) => {
+                setSelectedClass(value);
+                handleInputChange('class_id', value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Class" />
+              </SelectTrigger>
+              <SelectContent>
+                {sclassesList?.map((cls) => (
+                  <SelectItem key={cls.id} value={cls.id?.toString()}>
+                    {cls.sclassName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Teacher</Label>
+            <Select
+              value={formData.teacher_id}
+              onValueChange={(value) => {
+                handleInputChange('teacher_id', value);
+                handleInputChange('subject_id', ''); // reset subject when teacher changes
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Teacher" />
+              </SelectTrigger>
+              <SelectContent>
+                {getTeacherOptions().map((teacher) => (
+                  <SelectItem key={teacher.id} value={teacher.id?.toString()}>
+                    {teacher.name}
+                  </SelectItem>
+                ))}
+                {getTeacherOptions().length === 0 && (
+                  <SelectItem disabled value="no-teachers">
+                    No teachers available for this class
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Day of Week</Label>
+            <Select
+              value={formData.day_of_week}
+              onValueChange={(value) => handleInputChange('day_of_week', value)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Day" />
@@ -399,65 +546,54 @@ const TimetableManagement = () => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+          </div>
 
-              <div>
-                <Label>Subject</Label>
-                <Select
-                  value={formData.subject_id}
-                  onValueChange={(value) => handleInputChange('subject_id', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getClassSubjects().map((subject) => (
-                      <SelectItem key={subject.id} value={subject.id?.toString()}>
-                        {subject.subName}
+          <div>
+            <Label>Subject</Label>
+            <Select
+              value={formData.subject_id}
+              onValueChange={(value) => handleInputChange('subject_id', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Subject" />
+              </SelectTrigger>
+              <SelectContent>
+                {getFilteredSubjectsForTeacher().length > 0 ? (
+                  getFilteredSubjectsForTeacher().map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id?.toString()}>
+                      {subject.subName}
+                    </SelectItem>
+                  ))
+                ) : (
+                      <SelectItem disabled value="no-subjects">
+                        No subjects for this class
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div>
-              <Label>Teacher</Label>
-              <Select
-                value={formData.teacher_id}
-                onValueChange={(value) => handleInputChange('teacher_id', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Teacher" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teachersList?.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id?.toString()}>
-                      {teacher.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Start Time</Label>
-                <Input
-                  type="time"
-                  value={formData.start_time}
-                  onChange={(e) => handleInputChange('start_time', e.target.value)}
-                />
-              </div>
+              <Input
+                type="time"
+                step="60"
+                value={formData.start_time}
+                onChange={(e) => handleInputChange('start_time', e.target.value)}
+              />
+            </div>
 
               <div>
                 <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={formData.end_time}
-                  onChange={(e) => handleInputChange('end_time', e.target.value)}
-                />
-              </div>
+              <Input
+                type="time"
+                step="60"
+                value={formData.end_time}
+                onChange={(e) => handleInputChange('end_time', e.target.value)}
+              />
+            </div>
             </div>
 
             <div>
@@ -495,20 +631,71 @@ const TimetableManagement = () => {
       {/* Edit Entry Dialog */}
       <AlertDialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <AlertDialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Edit Timetable Entry</AlertDialogTitle>
-            <AlertDialogDescription>
-              Update the selected timetable entry.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Edit Timetable Entry</AlertDialogTitle>
+        <AlertDialogDescription>
+          Update the selected timetable entry.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Day of Week</Label>
-                <Select
-                  value={formData.day_of_week}
-                  onValueChange={(value) => handleInputChange('day_of_week', value)}
+      <div className="space-y-4 py-4">
+        <div className="space-y-3">
+          <div>
+            <Label>Class</Label>
+            <Select
+              value={formData.class_id || selectedClass}
+              onValueChange={(value) => {
+                setSelectedClass(value);
+                handleInputChange('class_id', value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Class" />
+              </SelectTrigger>
+              <SelectContent>
+                {sclassesList?.map((cls) => (
+                  <SelectItem key={cls.id} value={cls.id?.toString()}>
+                    {cls.sclassName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Teacher</Label>
+            <Select
+              value={formData.teacher_id}
+              onValueChange={(value) => {
+                handleInputChange('teacher_id', value);
+                handleInputChange('subject_id', '');
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Teacher" />
+              </SelectTrigger>
+              <SelectContent>
+                {getTeacherOptions().map((teacher) => (
+                  <SelectItem key={teacher.id} value={teacher.id?.toString()}>
+                    {teacher.name}
+                  </SelectItem>
+                ))}
+                {getTeacherOptions().length === 0 && (
+                  <SelectItem disabled value="no-teachers">
+                    No teachers available for this class
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Day of Week</Label>
+            <Select
+              value={formData.day_of_week}
+              onValueChange={(value) => handleInputChange('day_of_week', value)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Day" />
@@ -521,65 +708,54 @@ const TimetableManagement = () => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+          </div>
 
-              <div>
-                <Label>Subject</Label>
-                <Select
-                  value={formData.subject_id}
-                  onValueChange={(value) => handleInputChange('subject_id', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getClassSubjects().map((subject) => (
-                      <SelectItem key={subject.id} value={subject.id?.toString()}>
-                        {subject.subName}
+          <div>
+            <Label>Subject</Label>
+            <Select
+              value={formData.subject_id}
+              onValueChange={(value) => handleInputChange('subject_id', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Subject" />
+              </SelectTrigger>
+              <SelectContent>
+                {getFilteredSubjectsForTeacher().length > 0 ? (
+                  getFilteredSubjectsForTeacher().map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id?.toString()}>
+                      {subject.subName}
+                    </SelectItem>
+                  ))
+                ) : (
+                      <SelectItem disabled value="no-subjects">
+                        No subjects for this class
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div>
-              <Label>Teacher</Label>
-              <Select
-                value={formData.teacher_id}
-                onValueChange={(value) => handleInputChange('teacher_id', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Teacher" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teachersList?.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id?.toString()}>
-                      {teacher.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Start Time</Label>
-                <Input
-                  type="time"
-                  value={formData.start_time}
-                  onChange={(e) => handleInputChange('start_time', e.target.value)}
-                />
-              </div>
+              <Input
+                type="time"
+                step="60"
+                value={formData.start_time}
+                onChange={(e) => handleInputChange('start_time', e.target.value)}
+              />
+            </div>
 
               <div>
                 <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={formData.end_time}
-                  onChange={(e) => handleInputChange('end_time', e.target.value)}
-                />
-              </div>
+              <Input
+                type="time"
+                step="60"
+                value={formData.end_time}
+                onChange={(e) => handleInputChange('end_time', e.target.value)}
+              />
+            </div>
             </div>
 
             <div>

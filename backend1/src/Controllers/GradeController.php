@@ -9,9 +9,12 @@ use App\Models\Exam;
 use App\Models\ExamResult;
 use App\Models\AcademicYear;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 
 class GradeController
 {
+    use LogsActivity;
+
     private $gradeModel;
     private $examModel;
     private $examResultModel;
@@ -159,3 +162,4 @@ class GradeController
         }
     }
 }
+

@@ -143,18 +143,73 @@ $app->group('/api', function (RouteCollectorProxy $group) {
         }
     })->add(new \App\Middleware\AuthMiddleware());
 
-    // Admin routes
+    // Admin routes (specific routes before variable routes)
     $group->post('/admin/register', [AdminController::class, 'register']);
     $group->post('/admin/login', [AdminController::class, 'login']);
     $group->get('/admin/profile', [AdminController::class, 'getProfile'])->add(new AuthMiddleware());
     $group->put('/admin/profile', [AdminController::class, 'updateProfile'])->add(new AuthMiddleware());
     $group->get('/admin/stats', [AdminController::class, 'getDashboardStats'])->add(new AuthMiddleware());
     $group->get('/admin/charts', [AdminController::class, 'getDashboardCharts'])->add(new AuthMiddleware());
-    $group->delete('/admin/{id}', [AdminController::class, 'deleteAdmin'])->add(new AuthMiddleware());
+    
+    // Super Admin - Admin user management
+    $group->post('/admin/admin-users', [AdminController::class, 'createAdminUser'])->add(new AuthMiddleware());
+    $group->get('/admin/admin-users', [AdminController::class, 'getAdminUsers'])->add(new AuthMiddleware());
+    $group->get('/admin/super-admin-status', [AdminController::class, 'checkSuperAdminStatus'])->add(new AuthMiddleware());
+    $group->get('/admin/permissions', [AdminController::class, 'getPermissions'])->add(new AuthMiddleware());
     
     // Admin-prefixed academic year routes (alias)
     $group->get('/admin/academic-years', [AcademicYearController::class, 'getAll'])->add(new AuthMiddleware());
     $group->get('/admin/academic-years/current', [AcademicYearController::class, 'getCurrent'])->add(new AuthMiddleware());
+
+    // Activity Logs (Admin) - must be defined before variable routes
+    $group->get('/admin/activity-logs', [\App\Controllers\ActivityLogController::class, 'getLogs'])->add(new AuthMiddleware());
+    $group->get('/admin/activity-logs/stats', [\App\Controllers\ActivityLogController::class, 'getStats'])->add(new AuthMiddleware());
+    $group->get('/admin/activity-logs/export', [\App\Controllers\ActivityLogController::class, 'export'])->add(new AuthMiddleware());
+
+    // Notifications (Admin) - static routes only, variable routes moved to end
+    $group->post('/admin/notifications', [NotificationController::class, 'createNotification'])->add(new AuthMiddleware());
+    $group->get('/admin/notifications', [NotificationController::class, 'getAllNotifications'])->add(new AuthMiddleware());
+
+    // System Settings (Admin)
+    $group->get('/admin/settings', [SettingsController::class, 'getSettings'])->add(new AuthMiddleware());
+    $group->put('/admin/settings', [SettingsController::class, 'updateSettings'])->add(new AuthMiddleware());
+    $group->put('/admin/settings/general', [SettingsController::class, 'updateSettings'])->add(new AuthMiddleware());
+    $group->post('/admin/settings/backup', [SettingsController::class, 'createBackup'])->add(new AuthMiddleware());
+    $group->post('/admin/settings/test-email', [SettingsController::class, 'testEmail'])->add(new AuthMiddleware());
+
+    // Reports (Admin) - static routes only
+    $group->get('/admin/reports/overview', [ReportsController::class, 'getOverview'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/academic', [ReportsController::class, 'getAcademicReport'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/financial', [ReportsController::class, 'getFinancialReport'])->add(new AuthMiddleware());
+    $group->get('/admin/reports/attendance', [ReportsController::class, 'getAttendanceReport'])->add(new AuthMiddleware());
+
+    // Cache Management (Admin)
+    $group->post('/admin/cache/clear', function ($request, $response) {
+        try {
+            $cache = new \App\Utils\Cache();
+            $count = $cache->flush();
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => "Cleared $count cache files"
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to clear cache: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    })->add(new AuthMiddleware());
+
+    // Town Master Management (Admin) - static routes only
+    $group->get('/admin/towns', [\App\Controllers\TownMasterController::class, 'getAllTowns'])->add(new AuthMiddleware());
+    $group->post('/admin/towns', [\App\Controllers\TownMasterController::class, 'createTown'])->add(new AuthMiddleware());
+
+    // User Roles Management (Admin) - static routes only
+    $group->get('/admin/user-roles', [\App\Controllers\UserRoleController::class, 'getAllRoles'])->add(new AuthMiddleware());
+    $group->get('/admin/user-roles/available', [\App\Controllers\UserRoleController::class, 'getAvailableRoles'])->add(new AuthMiddleware());
+    $group->post('/admin/user-roles', [\App\Controllers\UserRoleController::class, 'assignRole'])->add(new AuthMiddleware());
 
     // Password Reset routes (no auth required)
     $group->post('/password/forgot', [\App\Controllers\PasswordResetController::class, 'requestReset']);
@@ -272,14 +327,21 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->get('/teachers/{teacherId}/subjects/{subjectId}/students', [TeacherController::class, 'getSubjectStudents'])->add(new AuthMiddleware());
     $group->post('/teachers/{teacherId}/subjects/{subjectId}/grades', [TeacherController::class, 'submitGrade'])->add(new AuthMiddleware());
 
-    // Class routes
+    // Class routes (specific routes BEFORE variable routes)
     $group->post('/classes', [ClassController::class, 'create'])->add(new AuthMiddleware());
     $group->get('/classes', [ClassController::class, 'getAll'])->add(new AuthMiddleware());
+    
+    // Class CSV Import/Export routes (specific routes must come before {id} routes)
+    $group->get('/classes/export/csv', [ClassController::class, 'exportCSV'])->add(new AuthMiddleware());
+    $group->post('/classes/import/csv', [ClassController::class, 'importCSV'])->add(new AuthMiddleware());
+    $group->get('/classes/template/csv', [ClassController::class, 'downloadTemplate'])->add(new AuthMiddleware());
+    
+    // Class variable routes (must come after all specific /classes/* routes)
     $group->get('/classes/{id}', [ClassController::class, 'getClass'])->add(new AuthMiddleware());
     $group->get('/classes/{id}/subjects/free', [ClassController::class, 'getFreeSubjects'])->add(new AuthMiddleware());
+    $group->get('/classes/{id}/subjects', [ClassController::class, 'getClassSubjects'])->add(new AuthMiddleware());
     $group->put('/classes/{id}', [ClassController::class, 'update'])->add(new AuthMiddleware());
     $group->delete('/classes/{id}', [ClassController::class, 'delete'])->add(new AuthMiddleware());
-    $group->get('/classes/{id}/subjects', [ClassController::class, 'getClassSubjects'])->add(new AuthMiddleware());
 
     // Subject routes
     $group->post('/subjects', [SubjectController::class, 'create'])->add(new AuthMiddleware());
@@ -624,6 +686,12 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/parents/communications', [ParentController::class, 'createCommunication'])->add(new AuthMiddleware());
     $group->get('/parents/communications', [ParentController::class, 'getCommunications'])->add(new AuthMiddleware());
     $group->get('/parents/communications/{id}', [ParentController::class, 'getCommunicationDetails'])->add(new AuthMiddleware());
+    
+    // Parent Medical Record Routes
+    $group->post('/parents/medical-records', [ParentController::class, 'addMedicalRecord'])->add(new AuthMiddleware());
+    $group->get('/parents/medical-records', [ParentController::class, 'getMedicalRecords'])->add(new AuthMiddleware());
+    $group->get('/parents/children/{student_id}/medical-records', [ParentController::class, 'getMedicalRecords'])->add(new AuthMiddleware());
+    $group->put('/parents/medical-records/{id}', [ParentController::class, 'updateMedicalRecord'])->add(new AuthMiddleware());
 
     // ===== MEDICAL STAFF ROUTES =====
     $group->post('/medical/register', [MedicalController::class, 'register'])->add(new AuthMiddleware());
@@ -667,50 +735,6 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/settings/backup', [SettingsController::class, 'createBackup'])->add(new AuthMiddleware());
     $group->post('/settings/restore', [SettingsController::class, 'restoreBackup'])->add(new AuthMiddleware());
 
-    // ===== ADMIN-SPECIFIC ENHANCED ROUTES =====
-    // Activity Logs (Admin)
-    $group->get('/admin/activity-logs', [\App\Controllers\ActivityLogController::class, 'getLogs'])->add(new AuthMiddleware());
-    $group->get('/admin/activity-logs/stats', [\App\Controllers\ActivityLogController::class, 'getStats'])->add(new AuthMiddleware());
-    $group->get('/admin/activity-logs/export', [\App\Controllers\ActivityLogController::class, 'export'])->add(new AuthMiddleware());
-
-    // Notifications (Admin)
-    $group->post('/admin/notifications', [NotificationController::class, 'createNotification'])->add(new AuthMiddleware());
-    $group->get('/admin/notifications', [NotificationController::class, 'getAllNotifications'])->add(new AuthMiddleware());
-    $group->put('/admin/notifications/{id}', [NotificationController::class, 'updateNotification'])->add(new AuthMiddleware());
-    $group->delete('/admin/notifications/{id}', [NotificationController::class, 'deleteNotification'])->add(new AuthMiddleware());
-
-    // System Settings (Admin)
-    $group->get('/admin/settings', [SettingsController::class, 'getSettings'])->add(new AuthMiddleware());
-    $group->put('/admin/settings', [SettingsController::class, 'updateSettings'])->add(new AuthMiddleware());
-    $group->post('/admin/settings/backup', [SettingsController::class, 'createBackup'])->add(new AuthMiddleware());
-    $group->post('/admin/settings/test-email', [SettingsController::class, 'testEmail'])->add(new AuthMiddleware());
-
-    // Reports (Admin)
-    $group->get('/admin/reports/overview', [ReportsController::class, 'getOverview'])->add(new AuthMiddleware());
-    $group->get('/admin/reports/academic', [ReportsController::class, 'getAcademicReport'])->add(new AuthMiddleware());
-    $group->get('/admin/reports/financial', [ReportsController::class, 'getFinancialReport'])->add(new AuthMiddleware());
-    $group->get('/admin/reports/attendance', [ReportsController::class, 'getAttendanceReport'])->add(new AuthMiddleware());
-    $group->get('/admin/reports/{type}/export', [ReportsController::class, 'exportReport'])->add(new AuthMiddleware());
-
-    // Cache Management
-    $group->post('/admin/cache/clear', function ($request, $response) {
-        try {
-            $cache = new \App\Utils\Cache();
-            $count = $cache->flush();
-            $response->getBody()->write(json_encode([
-                'success' => true,
-                'message' => "Cleared $count cache files"
-            ]));
-            return $response->withHeader('Content-Type', 'application/json');
-        } catch (\Exception $e) {
-            $response->getBody()->write(json_encode([
-                'success' => false,
-                'message' => 'Failed to clear cache: ' . $e->getMessage()
-            ]));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
-        }
-    })->add(new AuthMiddleware());
-
     // ===== USER NOTIFICATIONS ROUTES handled in /api/api alias section (lines 56-107) =====
     // Note: Main notification routes are in the alias section to handle /api/api/ paths
     
@@ -718,18 +742,6 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/password-reset/request', [PasswordResetController::class, 'requestReset']);
     $group->post('/password-reset/verify', [PasswordResetController::class, 'verifyToken']);
     $group->post('/password-reset/reset', [PasswordResetController::class, 'resetPassword']);
-
-    // ===== TOWN MASTER MANAGEMENT (Admin) =====
-    $group->get('/admin/towns', [\App\Controllers\TownMasterController::class, 'getAllTowns'])->add(new AuthMiddleware());
-    $group->post('/admin/towns', [\App\Controllers\TownMasterController::class, 'createTown'])->add(new AuthMiddleware());
-    $group->put('/admin/towns/{id}', [\App\Controllers\TownMasterController::class, 'updateTown'])->add(new AuthMiddleware());
-    $group->delete('/admin/towns/{id}', [\App\Controllers\TownMasterController::class, 'deleteTown'])->add(new AuthMiddleware());
-    
-    $group->get('/admin/towns/{id}/blocks', [\App\Controllers\TownMasterController::class, 'getBlocks'])->add(new AuthMiddleware());
-    $group->put('/admin/blocks/{id}', [\App\Controllers\TownMasterController::class, 'updateBlock'])->add(new AuthMiddleware());
-    
-    $group->post('/admin/towns/{id}/assign-master', [\App\Controllers\TownMasterController::class, 'assignTownMaster'])->add(new AuthMiddleware());
-    $group->delete('/admin/town-masters/{id}', [\App\Controllers\TownMasterController::class, 'removeTownMaster'])->add(new AuthMiddleware());
 
     // ===== TOWN MASTER ROUTES (Teacher with Town Master role) =====
     $group->get('/town-master/my-town', [\App\Controllers\TownMasterController::class, 'getMyTown'])->add(new AuthMiddleware());
@@ -745,11 +757,31 @@ $app->group('/api', function (RouteCollectorProxy $group) {
     $group->post('/teacher/town-master/attendance', [\App\Controllers\TownMasterController::class, 'recordAttendance'])->add(new AuthMiddleware());
     $group->get('/teacher/town-master/attendance', [\App\Controllers\TownMasterController::class, 'getAttendance'])->add(new AuthMiddleware());
 
-    // ===== USER ROLES MANAGEMENT (Admin) =====
-    $group->get('/admin/user-roles', [\App\Controllers\UserRoleController::class, 'getAllRoles'])->add(new AuthMiddleware());
-    $group->get('/admin/user-roles/available', [\App\Controllers\UserRoleController::class, 'getAvailableRoles'])->add(new AuthMiddleware());
+    // ===== ADMIN VARIABLE ROUTES (MUST BE LAST) =====
+    // CRITICAL: These catch-all routes with {id} MUST come after ALL specific /admin/* routes
+    // to avoid shadowing specific routes like /admin/settings, /admin/towns, etc.
+    // NOTE: Removed PUT /admin/{id} - use PUT /admin/profile for profile updates instead
+    
+    // Admin notification variable routes
+    $group->put('/admin/notifications/{id}', [NotificationController::class, 'updateNotification'])->add(new AuthMiddleware());
+    $group->delete('/admin/notifications/{id}', [NotificationController::class, 'deleteNotification'])->add(new AuthMiddleware());
+    
+    // Admin reports variable routes
+    $group->get('/admin/reports/{type}/export', [ReportsController::class, 'exportReport'])->add(new AuthMiddleware());
+    
+    // Admin towns variable routes  
+    $group->put('/admin/towns/{id}', [\App\Controllers\TownMasterController::class, 'updateTown'])->add(new AuthMiddleware());
+    $group->delete('/admin/towns/{id}', [\App\Controllers\TownMasterController::class, 'deleteTown'])->add(new AuthMiddleware());
+    $group->get('/admin/towns/{id}/blocks', [\App\Controllers\TownMasterController::class, 'getBlocks'])->add(new AuthMiddleware());
+    $group->put('/admin/blocks/{id}', [\App\Controllers\TownMasterController::class, 'updateBlock'])->add(new AuthMiddleware());
+    $group->post('/admin/towns/{id}/assign-master', [\App\Controllers\TownMasterController::class, 'assignTownMaster'])->add(new AuthMiddleware());
+    $group->delete('/admin/town-masters/{id}', [\App\Controllers\TownMasterController::class, 'removeTownMaster'])->add(new AuthMiddleware());
+    
+    // Admin user roles variable routes
     $group->get('/admin/user-roles/{role}', [\App\Controllers\UserRoleController::class, 'getUsersByRole'])->add(new AuthMiddleware());
     $group->get('/admin/user-roles/{user_type}/{user_id}', [\App\Controllers\UserRoleController::class, 'getUserRoles'])->add(new AuthMiddleware());
-    $group->post('/admin/user-roles', [\App\Controllers\UserRoleController::class, 'assignRole'])->add(new AuthMiddleware());
     $group->delete('/admin/user-roles/{id}', [\App\Controllers\UserRoleController::class, 'removeRole'])->add(new AuthMiddleware());
+    
+    // Admin generic delete route (LAST of all /admin routes)
+    $group->delete('/admin/{id}', [AdminController::class, 'deleteAdmin'])->add(new AuthMiddleware());
 });

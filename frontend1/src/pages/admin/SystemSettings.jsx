@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import BackButton from '@/components/BackButton';
 import {
@@ -84,6 +85,15 @@ const SystemSettings = () => {
   const [securitySettings, setSecuritySettings] = useState(() => ({ ...SECURITY_DEFAULTS }));
 
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  
+  // Test Email Modal State
+  const [testEmailModalOpen, setTestEmailModalOpen] = useState(false);
+  const [testEmailData, setTestEmailData] = useState({
+    recipientEmail: '',
+    subject: 'Test Email from School Management System',
+    message: 'This is a test email to verify your SMTP configuration is working correctly.',
+  });
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
 
   useEffect(() => {
     if (!currentUser?.token) return;
@@ -158,6 +168,83 @@ const SystemSettings = () => {
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    // Validate email
+    if (!testEmailData.recipientEmail || !testEmailData.recipientEmail.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    if (!testEmailData.subject.trim()) {
+      toast.error('Please enter an email subject');
+      return;
+    }
+
+    if (!testEmailData.message.trim()) {
+      toast.error('Please enter an email message');
+      return;
+    }
+
+    if (!currentUser?.token) {
+      toast.error('Not authorized');
+      return;
+    }
+
+    console.log('=== Sending Test Email ===');
+    console.log('To:', testEmailData.recipientEmail);
+    console.log('Subject:', testEmailData.subject);
+    console.log('Message length:', testEmailData.message.length);
+
+    setSendingTestEmail(true);
+    try {
+      console.log('Making API request...');
+      const response = await axios.post(
+        '/admin/settings/test-email',
+        {
+          to: testEmailData.recipientEmail,
+          subject: testEmailData.subject,
+          message: testEmailData.message,
+        },
+        {
+          skipAuthRedirect: true,
+          headers: { Authorization: `Bearer ${currentUser.token}` },
+        }
+      );
+
+      console.log('API Response:', response.data);
+
+      if (response.data.success) {
+        toast.success('Test email sent successfully! Please check the recipient inbox.');
+        setTestEmailModalOpen(false);
+        // Reset form
+        setTestEmailData({
+          recipientEmail: '',
+          subject: 'Test Email from School Management System',
+          message: 'This is a test email to verify your SMTP configuration is working correctly.',
+        });
+      } else {
+        console.error('Email sending failed:', response.data.message);
+        toast.error(response.data.message || 'Failed to send test email');
+      }
+    } catch (error) {
+      console.error('=== Test Email Error ===');
+      console.error('Error:', error);
+      console.error('Response:', error.response);
+      
+      if (error.response?.status === 401) {
+        toast.error('Your session has expired. Please log in again.');
+        localStorage.removeItem('user');
+      } else {
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to send test email. Please check your SMTP settings.';
+        console.error('Error message:', errorMessage);
+        toast.error(errorMessage);
+      }
+    } finally {
+      console.log('Setting sendingTestEmail to false');
+      setSendingTestEmail(false);
     }
   };
 
@@ -594,7 +681,10 @@ const SystemSettings = () => {
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline">
+                <Button 
+                  variant="outline"
+                  onClick={() => setTestEmailModalOpen(true)}
+                >
                   <FiMail className="mr-2 h-4 w-4" />
                   Test Email
                 </Button>
@@ -859,6 +949,77 @@ const SystemSettings = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Test Email Modal */}
+      <Dialog open={testEmailModalOpen} onOpenChange={setTestEmailModalOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Test Email Configuration</DialogTitle>
+            <DialogDescription>
+              Send a test email to verify your SMTP settings are configured correctly.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="test-recipient-email">Recipient Email *</Label>
+              <Input
+                id="test-recipient-email"
+                type="email"
+                placeholder="recipient@example.com"
+                value={testEmailData.recipientEmail}
+                onChange={(e) =>
+                  setTestEmailData({ ...testEmailData, recipientEmail: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="test-email-subject">Subject *</Label>
+              <Input
+                id="test-email-subject"
+                placeholder="Enter email subject"
+                value={testEmailData.subject}
+                onChange={(e) =>
+                  setTestEmailData({ ...testEmailData, subject: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="test-email-message">Message *</Label>
+              <Textarea
+                id="test-email-message"
+                placeholder="Enter email message"
+                rows={4}
+                value={testEmailData.message}
+                onChange={(e) =>
+                  setTestEmailData({ ...testEmailData, message: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTestEmailModalOpen(false)}
+              disabled={sendingTestEmail}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleTestEmail} disabled={sendingTestEmail}>
+              {sendingTestEmail ? (
+                <>
+                  <FiRefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <FiMail className="mr-2 h-4 w-4" />
+                  Send Test Email
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

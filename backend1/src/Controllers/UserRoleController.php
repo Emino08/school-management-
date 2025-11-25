@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Config\Database;
 use PDO;
 use PDOException;
@@ -10,6 +12,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 class UserRoleController
 {
+    use LogsActivity;
+
     private $db;
 
     public function __construct()
@@ -422,3 +426,4 @@ class UserRoleController
         }
     }
 }
+

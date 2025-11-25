@@ -7,9 +7,12 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\AcademicYear;
 use App\Models\StudentEnrollment;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 
 class AcademicYearController
 {
+    use LogsActivity;
+
     private $academicYearModel;
     private $enrollmentModel;
 
@@ -351,3 +354,4 @@ class AcademicYearController
         }
     }
 }
+

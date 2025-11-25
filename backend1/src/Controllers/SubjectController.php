@@ -7,9 +7,14 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\Subject;
 use App\Models\AcademicYear;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
+use App\Traits\ResolvesAdminId;
 
 class SubjectController
 {
+    use LogsActivity;
+    use ResolvesAdminId;
+
     private $subjectModel;
     private $academicYearModel;
 
@@ -23,6 +28,7 @@ class SubjectController
     {
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
+        $adminId = $this->resolveAdminId($request, $user);
 
         $errors = Validator::validate($data, ['subject_name' => 'required', 'class_id' => 'required|numeric', 'subject_code' => 'required']);
         if (!empty($errors)) {
@@ -31,10 +37,10 @@ class SubjectController
         }
 
         try {
-            $data['admin_id'] = $user->id;
+            $data['admin_id'] = $adminId;
             // Duplicate check: same admin + class + subject_code
             $existing = $this->subjectModel->findOne([
-                'admin_id' => $user->id,
+                'admin_id' => $adminId,
                 'class_id' => $data['class_id'],
                 'subject_code' => $data['subject_code']
             ]);
@@ -55,11 +61,12 @@ class SubjectController
     public function getAll(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->resolveAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $subjects = $this->subjectModel->getSubjectsWithDetails(
-                $user->id,
+                $adminId,
                 $currentYear['id'] ?? null
             );
             $response->getBody()->write(json_encode(['success' => true, 'subjects' => $subjects]));
@@ -109,3 +116,4 @@ class SubjectController
         }
     }
 }
+

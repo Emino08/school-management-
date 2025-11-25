@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
 const LinkChild = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     student_id: '',
-    date_of_birth: ''
+    date_of_birth: '',
+    relationship: 'guardian'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -163,6 +164,28 @@ const LinkChild = () => {
                 />
                 <p className="mt-1 text-sm text-gray-500">
                   Enter the date exactly as registered with the school
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="relationship" className="block text-sm font-medium text-gray-700 mb-2">
+                  Relationship *
+                </label>
+                <select
+                  id="relationship"
+                  name="relationship"
+                  value={formData.relationship}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  required
+                >
+                  <option value="mother">Mother</option>
+                  <option value="father">Father</option>
+                  <option value="guardian">Guardian</option>
+                  <option value="other">Other</option>
+                </select>
+                <p className="mt-1 text-sm text-gray-500">
+                  Select your relationship to the child
                 </p>
               </div>
 

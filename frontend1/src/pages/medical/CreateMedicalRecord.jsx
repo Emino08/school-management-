@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import BackButton from '@/components/BackButton';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_BASE_URL_LOCAL ||
+  'http://localhost:8080/api';
 
 const CreateMedicalRecord = () => {
   const navigate = useNavigate();

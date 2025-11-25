@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -22,6 +23,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,6 +117,15 @@ const TeacherManagement = () => {
   const [loadingSubjects, setLoadingSubjects] = useState(false);
   const [selectedTeacherName, setSelectedTeacherName] = useState('');
 
+  const [townsList, setTownsList] = useState([]);
+  const [townsLoading, setTownsLoading] = useState(false);
+  const [townBlocks, setTownBlocks] = useState([]);
+  const [blocksLoading, setBlocksLoading] = useState(false);
+  const [townAssignModalOpen, setTownAssignModalOpen] = useState(false);
+  const [teacherForTownAssignment, setTeacherForTownAssignment] = useState(null);
+  const [selectedTownId, setSelectedTownId] = useState("");
+  const [assigningTown, setAssigningTown] = useState(false);
+
   // Analytics state
   const [analytics, setAnalytics] = useState({
     total: 0,
@@ -129,6 +144,26 @@ const TeacherManagement = () => {
   useEffect(() => {
     filterTeachers();
   }, [teachers, searchTerm, filterRole]);
+
+  useEffect(() => {
+    if (townAssignModalOpen) {
+      fetchTownsForAssignment();
+    } else {
+      setSelectedTownId("");
+      setTownBlocks([]);
+      setTeacherForTownAssignment(null);
+      setBlocksLoading(false);
+    }
+  }, [townAssignModalOpen]);
+
+  useEffect(() => {
+    if (!selectedTownId) {
+      setTownBlocks([]);
+      return;
+    }
+
+    fetchTownBlocks(selectedTownId);
+  }, [selectedTownId]);
 
   const fetchTeachers = async () => {
     setLoading(true);
@@ -176,6 +211,87 @@ const TeacherManagement = () => {
       console.error('Failed to fetch classes', e);
     }
   };
+
+  const fetchTownsForAssignment = async () => {
+    setTownsLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/admin/towns`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
+      if (response.data.success) {
+        setTownsList(response.data.towns || []);
+      } else {
+        setTownsList([]);
+        toast.error(response.data.message || 'Unable to load towns');
+      }
+    } catch (e) {
+      console.error('Failed to load towns', e);
+      setTownsList([]);
+      toast.error('Failed to load towns');
+    } finally {
+      setTownsLoading(false);
+    }
+  };
+
+  const fetchTownBlocks = async (townId) => {
+    setBlocksLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/admin/towns/${townId}/blocks`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` },
+      });
+      if (response.data.success) {
+        setTownBlocks(response.data.blocks || []);
+      } else {
+        setTownBlocks([]);
+        toast.error(response.data.message || 'Unable to load blocks');
+      }
+    } catch (e) {
+      console.error('Failed to load town blocks', e);
+      setTownBlocks([]);
+      toast.error('Failed to load town blocks');
+    } finally {
+      setBlocksLoading(false);
+    }
+  };
+
+  const openTownAssignModal = (teacher) => {
+    setTeacherForTownAssignment(teacher);
+    setTownAssignModalOpen(true);
+  };
+
+  const submitTownAssignment = async () => {
+    if (!selectedTownId || !teacherForTownAssignment) {
+      toast.error('Select a town before assigning');
+      return;
+    }
+    setAssigningTown(true);
+    try {
+      const response = await axios.post(
+        `${API_URL}/admin/towns/${selectedTownId}/assign-master`,
+        { teacher_id: teacherForTownAssignment.id },
+        { headers: { Authorization: `Bearer ${currentUser?.token}` } }
+      );
+      if (response.data.success) {
+        smallSuccess('Town master assigned successfully');
+        setTownAssignModalOpen(false);
+        fetchTeachers();
+      } else {
+        toast.error(response.data.message || 'Failed to assign town master');
+      }
+    } catch (e) {
+      console.error('Failed to assign town master', e);
+      toast.error(e.response?.data?.message || 'Failed to assign town master');
+    } finally {
+      setAssigningTown(false);
+    }
+  };
+
+  const teacherAssignmentName = teacherForTownAssignment
+    ? teacherForTownAssignment.name ||
+      `${(teacherForTownAssignment.first_name || "").trim()} ${(
+        teacherForTownAssignment.last_name || ""
+      ).trim()}`.trim()
+    : "";
 
   const handleTemplateDownload = async () => {
     try {
@@ -896,7 +1012,7 @@ const TeacherManagement = () => {
                             Remove Town
                           </Button>
                         ) : (
-                          <Button variant="outline" size="sm" onClick={() => toggleTownMaster(teacher, true)}>
+                          <Button variant="outline" size="sm" onClick={() => openTownAssignModal(teacher)}>
                             Make Town
                           </Button>
                         )}
@@ -944,8 +1060,8 @@ const TeacherManagement = () => {
         }}
       >
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          {viewTeacherDetails ? (
-            <>
+        {viewTeacherDetails ? (
+          <>
               <div className="rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 text-white shadow-lg p-5">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -1018,15 +1134,130 @@ const TeacherManagement = () => {
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setViewTeacher(null)}>
-                  Close
-                </Button>
-              </DialogFooter>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setViewTeacher(null)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={townAssignModalOpen} onOpenChange={setTownAssignModalOpen}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Assign Town Master</DialogTitle>
+          <DialogDescription>
+            Choose the town (and review its blocks) for {teacherAssignmentName || "the teacher"}. Town and block management live under the Town Master tab.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          {townsLoading ? (
+            <Alert>
+              <AlertTitle>Loading towns</AlertTitle>
+              <AlertDescription>Please wait while we fetch your towns.</AlertDescription>
+            </Alert>
+          ) : townsList.length === 0 ? (
+            <Alert variant="destructive">
+              <AlertTitle>No towns created yet</AlertTitle>
+              <AlertDescription>
+                Go to the Town Master sidebar tab to create towns and their blocks before assigning a town master.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="assign-town-select">Town *</Label>
+                <Select
+                  id="assign-town-select"
+                  value={selectedTownId}
+                  onValueChange={(value) => setSelectedTownId(value)}
+                  disabled={assigningTown}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a town" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {townsList.map((town) => (
+                      <SelectItem key={town.id} value={town.id.toString()}>
+                        {town.name}
+                        {town.block_count ? ` (${town.block_count} blocks)` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Need to adjust the blocks? Manage town/block details from the Town Master tab.
+                </p>
+              </div>
+              {selectedTownId ? (
+                blocksLoading ? (
+                  <Alert>
+                    <AlertTitle>Loading blocks</AlertTitle>
+                    <AlertDescription>Fetching the blocks for the selected town.</AlertDescription>
+                  </Alert>
+                ) : townBlocks.length === 0 ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>No blocks configured yet</AlertTitle>
+                    <AlertDescription>
+                      Towns automatically get default blocks inside the Town Master tab. Add or update them there.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-700">Blocks in this town</p>
+                    <div className="grid gap-2">
+                      {townBlocks.map((block) => (
+                        <div
+                          key={block.id}
+                          className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">Block {block.name}</p>
+                            <p className="text-xs text-gray-500">
+                              Capacity {block.capacity ?? "—"} · Occupied {block.current_occupancy ?? 0}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-2 py-1 text-[11px] font-semibold rounded-full ${
+                              (block.current_occupancy ?? 0) >= (block.capacity ?? 0)
+                                ? "bg-red-100 text-red-700"
+                                : "bg-green-100 text-green-700"
+                            }`}
+                          >
+                            {(block.current_occupancy ?? 0) >= (block.capacity ?? 0) ? "Full" : "Available"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              ) : (
+                <Alert>
+                  <AlertTitle>Pick a town</AlertTitle>
+                  <AlertDescription>
+                    Select the town that will be managed by the teacher before assigning. Town/block maintenance happens in
+                    the Town Master tab.
+                  </AlertDescription>
+                </Alert>
+              )}
             </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setTownAssignModalOpen(false)} disabled={assigningTown}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submitTownAssignment}
+            disabled={!selectedTownId || townsList.length === 0 || townsLoading || assigningTown}
+          >
+            {assigningTown ? "Assigning…" : "Assign Town Master"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
       {/* Teacher Modal */}
       <TeacherModal

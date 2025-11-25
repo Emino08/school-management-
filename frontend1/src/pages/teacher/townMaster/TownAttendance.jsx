@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,8 +24,6 @@ import { Badge } from '@/components/ui/badge';
 import { CheckSquare, Save, AlertCircle, Calendar } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-
 const TownAttendance = ({ townData }) => {
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState({});
@@ -47,7 +45,7 @@ const TownAttendance = ({ townData }) => {
     try {
       setLoading(true);
       const params = selectedBlock ? `?block_id=${selectedBlock}` : '';
-      const response = await axios.get(`${API_URL}/teacher/town-master/students${params}`);
+      const response = await axios.get(`/teacher/town-master/students${params}`);
       if (response.data.success) {
         const studentList = response.data.students || [];
         setStudents(studentList);
@@ -73,7 +71,7 @@ const TownAttendance = ({ townData }) => {
   const checkExistingAttendance = async () => {
     try {
       const response = await axios.get(
-        `${API_URL}/teacher/town-master/attendance?date=${selectedDate}`
+        `/teacher/town-master/attendance?date=${selectedDate}`
       );
       if (response.data.success && response.data.attendance?.length > 0) {
         // Load existing attendance
@@ -127,7 +125,7 @@ const TownAttendance = ({ townData }) => {
         notes: attendance[student.student_block_id]?.notes || '',
       }));
 
-      const response = await axios.post(`${API_URL}/teacher/town-master/attendance`, {
+      const response = await axios.post('/teacher/town-master/attendance', {
         attendance: attendanceRecords,
       });
 

@@ -26,14 +26,18 @@ import {
   FiChevronDown,
   FiChevronRight,
   FiMapPin,
+  FiShield,
 } from "react-icons/fi";
 import { MdVpnKey } from "react-icons/md";
 import BoSchoolLogo from "@/assets/Bo-School-logo.png";
 import axios from "axios";
+import { useSelector } from 'react-redux';
 
 const SideBar = () => {
   const location = useLocation();
+  const { currentUser } = useSelector((state) => state.user);
   const [notificationCount, setNotificationCount] = React.useState(0);
+  const [permissions, setPermissions] = React.useState({});
   const [openSections, setOpenSections] = React.useState({
     academic: true,
     results: false,
@@ -44,10 +48,22 @@ const SideBar = () => {
 
   React.useEffect(() => {
     fetchNotificationCount();
+    fetchPermissions();
     // Poll every 30 seconds for new notifications
     const interval = setInterval(fetchNotificationCount, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const fetchPermissions = async () => {
+    try {
+      const response = await axios.get('/admin/permissions');
+      if (response.data.success) {
+        setPermissions(response.data.permissions || {});
+      }
+    } catch (error) {
+      console.error('Failed to fetch permissions:', error);
+    }
+  };
 
   const fetchNotificationCount = async () => {
     try {
@@ -64,6 +80,10 @@ const SideBar = () => {
   const toggleSection = (section) => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
+
+  // Check if user is principal (hide system settings for principals)
+  const isPrincipal = permissions.is_principal || permissions.role === 'principal';
+  const canAccessSystemSettings = !isPrincipal && (permissions.can_access_system_settings !== false);
 
   const NavItem = ({ to, icon: Icon, children, startsWith, badge }) => {
     const isActive = startsWith
@@ -237,31 +257,38 @@ const SideBar = () => {
           )}
         </div>
 
-        {/* System & Settings */}
-        <div>
-          <SectionHeader
-            isOpen={openSections.system}
-            onClick={() => toggleSection("system")}
-          >
-            System
-          </SectionHeader>
-          {openSections.system && (
-            <div className="space-y-0.5 mt-1">
-              <NavItem to="/Admin/users" icon={FiUsers} startsWith={true}>
-                Users
-              </NavItem>
-              <NavItem to="/Admin/reports" icon={FiBarChart2} startsWith={true}>
-                Reports
-              </NavItem>
-              <NavItem to="/Admin/settings" icon={FiSettings} startsWith={true}>
-                System Settings
-              </NavItem>
-              <NavItem to="/Admin/activity-logs" icon={FiActivity} startsWith={true}>
-                Activity Logs
-              </NavItem>
-            </div>
-          )}
-        </div>
+        {/* System & Settings - Only show for admins, not principals */}
+        {canAccessSystemSettings && (
+          <div>
+            <SectionHeader
+              isOpen={openSections.system}
+              onClick={() => toggleSection("system")}
+            >
+              System
+            </SectionHeader>
+            {openSections.system && (
+              <div className="space-y-0.5 mt-1">
+                {permissions.can_create_admins && (
+                  <NavItem to="/Admin/admin-users" icon={FiShield} startsWith={true}>
+                    Admin Users
+                  </NavItem>
+                )}
+                <NavItem to="/Admin/users" icon={FiUsers} startsWith={true}>
+                  Users
+                </NavItem>
+                <NavItem to="/Admin/reports" icon={FiBarChart2} startsWith={true}>
+                  Reports
+                </NavItem>
+                <NavItem to="/Admin/settings" icon={FiSettings} startsWith={true}>
+                  System Settings
+                </NavItem>
+                <NavItem to="/Admin/activity-logs" icon={FiActivity} startsWith={true}>
+                  Activity Logs
+                </NavItem>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Separator className="my-1" />

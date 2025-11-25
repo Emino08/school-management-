@@ -8,9 +8,14 @@ use App\Models\Attendance;
 use App\Models\AcademicYear;
 use App\Models\ParentNotification;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
+use App\Traits\ResolvesAdminId;
 
 class AttendanceController
 {
+    use LogsActivity;
+    use ResolvesAdminId;
+
     private $attendanceModel;
     private $academicYearModel;
     private $notificationModel;
@@ -26,6 +31,7 @@ class AttendanceController
     {
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         $errors = Validator::validate($data, ['student_id' => 'required|numeric', 'subject_id' => 'required|numeric', 'date' => 'required', 'status' => 'required']);
         if (!empty($errors)) {
@@ -34,7 +40,7 @@ class AttendanceController
         }
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $data['academic_year_id'] = $currentYear['id'];
 
             // Enforce timetable integration: only allow attendance during a scheduled class slot for the student's class and subject
@@ -81,12 +87,34 @@ class AttendanceController
             if ($data['status'] === 'absent') {
                 $this->notificationModel->notifyAttendanceMiss(
                     $data['student_id'],
-                    $user->id,
+                    $adminId,
                     $data['date']
                 );
             }
 
-            $response->getBody()->write(json_encode(['success' => true, 'message' => 'Attendance marked successfully', 'attendance_id' => $attendanceId]));
+            // Handle streaks and principal escalation for consecutive absences
+            $this->handleConsecutiveAbsence(
+                (int)$data['student_id'],
+                (int)$data['subject_id'],
+                $data['date'],
+                $adminId,
+                (int)$currentYear['id']
+            );
+
+            // Log attendance marking
+            $this->logActivity(
+                $request,
+                'mark',
+                "Marked attendance for class",
+                'attendance',
+                null
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Attendance marked successfully',
+                'attendance_id' => $attendanceId
+            ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
         } catch (\Exception $e) {
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Failed to mark attendance: ' . $e->getMessage()]));
@@ -100,7 +128,7 @@ class AttendanceController
         $params = $request->getQueryParams();
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $subjectId = isset($params['subject_id']) && $params['subject_id'] !== '' ? (int)$params['subject_id'] : null;
             $start = $params['start'] ?? null;
             $end = $params['end'] ?? null;
@@ -133,7 +161,7 @@ class AttendanceController
         $user = $request->getAttribute('user');
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $stats = $this->attendanceModel->getAttendanceStats($args['studentId'], $currentYear ? $currentYear['id'] : null);
 
             $response->getBody()->write(json_encode(['success' => true, 'stats' => $stats]));
@@ -154,7 +182,7 @@ class AttendanceController
 
         try {
             $db = \App\Config\Database::getInstance()->getConnection();
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $yearId = $currentYear ? $currentYear['id'] : null;
 
             $sql = "SELECT st.id as student_id, st.name, st.id_number, st.email, st.phone,
@@ -186,4 +214,130 @@ class AttendanceController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
+
+    /**
+     * Track absence streaks and escalate after three consecutive misses
+     */
+    private function handleConsecutiveAbsence(int $studentId, int $subjectId, string $date, int $adminId, ?int $academicYearId): void
+    {
+        try {
+            if (!$academicYearId) {
+                return;
+            }
+
+            $db = \App\Config\Database::getInstance()->getConnection();
+
+            $streak = $this->calculateClassAbsenceStreak($db, $studentId, $subjectId);
+            $term = 1; // Fallback term for class attendance tracking
+
+            $existing = $this->getStrikeRecord($db, $studentId, $academicYearId, $term);
+            $alreadyNotified = $existing && (bool)$existing['notification_sent'];
+            $shouldNotify = $streak >= 3 && !$alreadyNotified;
+            $markNotified = $streak >= 3 ? ($alreadyNotified || $shouldNotify) : false;
+
+            $this->upsertStrike($db, $studentId, $academicYearId, $term, $streak, $date, $markNotified);
+
+            if ($shouldNotify) {
+                $student = $this->getStudentProfile($db, $studentId);
+                $studentName = $student['name'] ?? ('ID ' . $studentId);
+                $idNumber = $student['id_number'] ?? '';
+                $studentLabel = trim($studentName . ($idNumber ? " ({$idNumber})" : ''));
+                $message = "Student {$studentLabel} has missed three consecutive classes (latest on {$date}).";
+
+                $stmt = $db->prepare("
+                    INSERT INTO notifications (user_id, user_role, message, notification_type, requires_action)
+                    SELECT id, 'Admin', :message, 'attendance', TRUE
+                    FROM admins
+                    WHERE role IN ('principal', 'admin')
+                ");
+                $stmt->execute(['message' => $message]);
+
+                // Alert parents as well
+                $this->notificationModel->notifyAttendanceStreak($studentId, $adminId, $date, $streak);
+            }
+        } catch (\Exception $e) {
+            error_log('Failed to handle consecutive absences: ' . $e->getMessage());
+        }
+    }
+
+    private function calculateClassAbsenceStreak($db, int $studentId, int $subjectId): int
+    {
+        $stmt = $db->prepare("
+            SELECT status 
+            FROM attendance 
+            WHERE student_id = :student_id AND subject_id = :subject_id
+            ORDER BY date DESC
+            LIMIT 3
+        ");
+        $stmt->execute([
+            ':student_id' => $studentId,
+            ':subject_id' => $subjectId
+        ]);
+
+        $records = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $streak = 0;
+        foreach ($records as $record) {
+            if (strtolower($record['status']) === 'absent') {
+                $streak++;
+            } else {
+                break;
+            }
+        }
+
+        return $streak;
+    }
+
+    private function getStrikeRecord($db, int $studentId, ?int $academicYearId, int $term): ?array
+    {
+        $stmt = $db->prepare("
+            SELECT * FROM attendance_strikes 
+            WHERE student_id = :student_id AND academic_year_id = :year_id AND term = :term
+            LIMIT 1
+        ");
+        $stmt->execute([
+            ':student_id' => $studentId,
+            ':year_id' => $academicYearId,
+            ':term' => $term
+        ]);
+        $record = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $record ?: null;
+    }
+
+    private function upsertStrike($db, int $studentId, ?int $academicYearId, int $term, int $streak, string $date, bool $notificationSent): void
+    {
+        $stmt = $db->prepare("
+            INSERT INTO attendance_strikes 
+                (student_id, academic_year_id, term, absence_count, last_absence_date, notification_sent, notification_sent_at)
+            VALUES 
+                (:student_id, :year_id, :term, :absence_count, :last_absence_date, :notification_sent, 
+                 CASE WHEN :notification_sent = TRUE THEN NOW() ELSE NULL END)
+            ON DUPLICATE KEY UPDATE
+                absence_count = VALUES(absence_count),
+                last_absence_date = VALUES(last_absence_date),
+                notification_sent = VALUES(notification_sent),
+                notification_sent_at = CASE 
+                    WHEN VALUES(notification_sent) = TRUE THEN COALESCE(attendance_strikes.notification_sent_at, NOW()) 
+                    ELSE NULL 
+                END
+        ");
+
+        $stmt->execute([
+            ':student_id' => $studentId,
+            ':year_id' => $academicYearId,
+            ':term' => $term,
+            ':absence_count' => $streak,
+            ':last_absence_date' => $date,
+            ':notification_sent' => $notificationSent
+        ]);
+    }
+
+    private function getStudentProfile($db, int $studentId): array
+    {
+        $stmt = $db->prepare("SELECT name, id_number FROM students WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $studentId]);
+        $student = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $student ?: [];
+    }
 }
+
+

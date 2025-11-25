@@ -37,7 +37,8 @@ class ActivityLogger
         ?array $metadata = null,
         ?string $ipAddress = null,
         ?string $userAgent = null,
-        ?string $userName = null
+        ?string $userName = null,
+        ?int $adminId = null
     ): bool {
         try {
             $normalizedType = $this->normalizeRole($userType);
@@ -49,16 +50,17 @@ class ActivityLogger
             );
 
             $sql = "INSERT INTO activity_logs (
-                        user_id, user_type, activity_type, description,
+                        admin_id, user_id, user_type, activity_type, description,
                         entity_type, entity_id, metadata, ip_address, user_agent
                     ) VALUES (
-                        :user_id, :user_type, :activity_type, :description,
+                        :admin_id, :user_id, :user_type, :activity_type, :description,
                         :entity_type, :entity_id, :metadata, :ip_address, :user_agent
                     )";
 
             $stmt = $this->db->prepare($sql);
             
             return $stmt->execute([
+                ':admin_id' => $adminId,
                 ':user_id' => $userId,
                 ':user_type' => $normalizedType,
                 ':activity_type' => $activityType,
@@ -92,6 +94,13 @@ class ActivityLogger
         $serverParams = $request->getServerParams();
         $ipAddress = $serverParams['REMOTE_ADDR'] ?? null;
         $userAgent = $serverParams['HTTP_USER_AGENT'] ?? null;
+        
+        // Extract admin_id from user object in request
+        $user = $request->getAttribute('user');
+        $adminId = null;
+        if ($user) {
+            $adminId = $user->admin_id ?? ($userType === 'admin' ? $user->id : null);
+        }
 
         return $this->log(
             $userId,
@@ -103,7 +112,8 @@ class ActivityLogger
             $metadata,
             $ipAddress,
             $userAgent,
-            $userName
+            $userName,
+            $adminId
         );
     }
 

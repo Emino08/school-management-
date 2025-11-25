@@ -40,14 +40,19 @@ class ParentUser extends BaseModel
 
     public function getChildren($parentId)
     {
-        $sql = "SELECT s.*, psl.verified, psl.created_at as linked_at,
-                       c.class_name, c.section
-                FROM parent_student_links psl
-                JOIN students s ON psl.student_id = s.id
+        $sql = "SELECT s.id, s.first_name, s.last_name, 
+                       CONCAT(s.first_name, ' ', s.last_name) as name,
+                       s.id_number, s.date_of_birth, s.gender, s.blood_group,
+                       s.photo, s.status,
+                       s.is_registered,
+                       sp.verified, sp.created_at as linked_at, sp.relationship,
+                       c.class_name, c.section, c.id as class_id
+                FROM student_parents sp
+                JOIN students s ON sp.student_id = s.id
                 LEFT JOIN student_enrollments se ON s.id = se.student_id
                 LEFT JOIN classes c ON se.class_id = c.id
-                WHERE psl.parent_id = :parent_id AND psl.verified = 1
-                ORDER BY s.name";
+                WHERE sp.parent_id = :parent_id AND sp.verified = 1
+                ORDER BY s.first_name, s.last_name";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':parent_id' => $parentId]);
@@ -72,16 +77,24 @@ class ParentUser extends BaseModel
         return $stmt->fetch(\PDO::FETCH_ASSOC);
     }
 
-    public function linkChild($parentId, $studentId, $adminId)
+    public function linkChild($parentId, $studentId, $adminId, $relationship = 'guardian')
     {
-        $sql = "INSERT INTO parent_student_links (parent_id, student_id, relationship, verified, verified_at)
-                VALUES (:parent_id, :student_id, 'parent', 1, NOW())
-                ON DUPLICATE KEY UPDATE verified = 1, verified_at = NOW()";
+        // Validate relationship value
+        $validRelationships = ['father', 'mother', 'guardian', 'other'];
+        if (!in_array($relationship, $validRelationships)) {
+            $relationship = 'guardian'; // Default to guardian if invalid
+        }
+
+        $sql = "INSERT INTO student_parents (parent_id, student_id, admin_id, relationship, verified, verified_at)
+                VALUES (:parent_id, :student_id, :admin_id, :relationship, 1, NOW())
+                ON DUPLICATE KEY UPDATE verified = 1, verified_at = NOW(), relationship = VALUES(relationship)";
 
         $stmt = $this->db->prepare($sql);
         return $stmt->execute([
             ':parent_id' => $parentId,
-            ':student_id' => $studentId
+            ':student_id' => $studentId,
+            ':admin_id' => $adminId,
+            ':relationship' => $relationship
         ]);
     }
 

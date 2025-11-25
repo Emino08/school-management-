@@ -86,7 +86,8 @@ class RankingController
                     WHERE er.exam_id = :exam_id
                       AND er.approval_status = 'approved'";
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare($sql);
+            $db = \App\Config\Database::getInstance()->getConnection();
+            $stmt = $db->prepare($sql);
             $stmt->execute([':exam_id' => $examId]);
             $combinations = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 

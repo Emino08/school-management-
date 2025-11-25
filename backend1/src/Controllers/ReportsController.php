@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Config\Database;
 use App\Utils\CurrencyFormatter;
 use PDO;
@@ -9,6 +11,8 @@ use PDOException;
 
 class ReportsController
 {
+    use LogsActivity;
+
     private $db;
     private $currencyCode;
     private $currencySymbol;
@@ -923,3 +927,4 @@ class ReportsController
         }
     }
 }
+

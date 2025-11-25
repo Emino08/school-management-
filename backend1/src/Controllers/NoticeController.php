@@ -6,9 +6,12 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\Notice;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 
 class NoticeController
 {
+    use LogsActivity;
+
     private $noticeModel;
 
     public function __construct()
@@ -40,7 +43,21 @@ class NoticeController
             }
             $noticeId = $this->noticeModel->create(Validator::sanitize($payload));
 
-            $response->getBody()->write(json_encode(['success' => true, 'message' => 'Notice created successfully', 'notice_id' => $noticeId]));
+            // Log notice creation
+            $this->logActivity(
+                $request,
+                'create',
+                "Created notice: {$data['title']}",
+                'notice',
+                $noticeId,
+                ['title' => $data['title']]
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Notice created successfully',
+                'notice_id' => $noticeId
+            ]));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
         } catch (\Exception $e) {
             $response->getBody()->write(json_encode(['success' => false, 'message' => 'Creation failed: ' . $e->getMessage()]));
@@ -151,3 +168,5 @@ class NoticeController
         }
     }
 }
+
+

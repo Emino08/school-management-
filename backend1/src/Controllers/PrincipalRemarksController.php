@@ -59,7 +59,8 @@ class PrincipalRemarksController
 
         try {
             // Check if remark already exists
-            $existing = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare(
+            $db = \App\Config\Database::getInstance()->getConnection();
+            $existing = $db->prepare(
                 "SELECT id FROM principal_remarks 
                  WHERE academic_year_id = :year_id 
                  AND class_id = :class_id 
@@ -83,7 +84,7 @@ class PrincipalRemarksController
 
             if ($existingRemark) {
                 // Update existing
-                $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare(
+                $stmt = $db->prepare(
                     "UPDATE principal_remarks 
                      SET remarks = :remarks,
                          principal_signature = :signature,
@@ -143,7 +144,8 @@ class PrincipalRemarksController
             $classId = $args['classId'];
             $term = $args['term'];
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare(
+            $db = \App\Config\Database::getInstance()->getConnection();
+            $stmt = $db->prepare(
                 "SELECT * FROM principal_remarks 
                  WHERE academic_year_id = :year_id 
                  AND class_id = :class_id 
@@ -178,7 +180,8 @@ class PrincipalRemarksController
         try {
             $academicYearId = $args['academicYearId'];
 
-            $stmt = $this\\App\\Config\\Database::getInstance()->getConnection()->prepare(
+            $db = \App\Config\Database::getInstance()->getConnection();
+            $stmt = $db->prepare(
                 "SELECT pr.*, c.class_name 
                  FROM principal_remarks pr
                  LEFT JOIN classes c ON pr.class_id = c.id

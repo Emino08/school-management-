@@ -8,9 +8,12 @@ use App\Models\ResultModel;
 use App\Models\ResultSummaryModel;
 use App\Models\ResultPinModel;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 
 class ResultController
 {
+    use LogsActivity;
+
     private $resultModel;
     private $summaryModel;
     private $pinModel;
@@ -648,3 +651,4 @@ class ResultController
         }
     }
 }
+

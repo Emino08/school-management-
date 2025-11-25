@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use App\Models\MedicalStaff;
 use App\Models\MedicalRecord;
 use App\Models\ParentNotification;
@@ -12,6 +14,8 @@ use Firebase\JWT\JWT;
 
 class MedicalController
 {
+    use LogsActivity;
+
     private $medicalStaffModel;
     private $medicalRecordModel;
     private $notificationModel;
@@ -489,3 +493,4 @@ class MedicalController
         }
     }
 }
+

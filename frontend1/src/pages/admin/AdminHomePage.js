@@ -28,6 +28,7 @@ import {
   MdArrowForward,
   MdAssignment,
   MdCheckCircle,
+  MdSecurity,
   MdWarning,
   MdNotifications,
   MdBook,
@@ -86,6 +87,7 @@ const AdminHomePage = () => {
 
     const [dashboardStats, setDashboardStats] = useState(null);
     const [dashboardCharts, setDashboardCharts] = useState(null);
+    const [userStats, setUserStats] = useState(null);
     const [chartStart, setChartStart] = useState('');
     const [chartEnd, setChartEnd] = useState('');
     const [feesTerm, setFeesTerm] = useState('ALL');
@@ -151,6 +153,22 @@ const AdminHomePage = () => {
         }
     }, [adminID, currentUser?.token, chartStart, chartEnd, feesTerm, attDate, API_URL]);
 
+    const fetchUserStats = useCallback(async () => {
+        if (!adminID || !currentUser?.token) {
+            return;
+        }
+        try {
+            const response = await axios.get(`${API_URL}/user-management/stats`, {
+                headers: { Authorization: `Bearer ${currentUser.token}` }
+            });
+            if (response.data?.success) {
+                setUserStats(response.data.stats || response.data.data || {});
+            }
+        } catch (error) {
+            console.error('User stats fetch failed:', error?.response?.data?.message || error.message);
+        }
+    }, [API_URL, adminID, currentUser?.token]);
+
     // Single initial load effect - runs only once
     useEffect(() => {
         if (hasFetchedInitialData.current || !adminID) return;
@@ -162,7 +180,8 @@ const AdminHomePage = () => {
         
         // Fetch dashboard data
         fetchDashboardData(true);
-    }, [adminID, dispatch, fetchDashboardData]);
+        fetchUserStats();
+    }, [adminID, dispatch, fetchDashboardData, fetchUserStats]);
 
     // Separate effect for filter changes - debounced
     useEffect(() => {
@@ -177,8 +196,8 @@ const AdminHomePage = () => {
 
     // Memoize computed statistics
     const numberOfStudents = useMemo(
-        () => normalizeCount(dashboardStats?.total_students),
-        [dashboardStats?.total_students]
+        () => normalizeCount(userStats?.total_students ?? dashboardStats?.total_students),
+        [userStats?.total_students, dashboardStats?.total_students]
     );
 
     const numberOfClasses = useMemo(
@@ -187,8 +206,33 @@ const AdminHomePage = () => {
     );
 
     const numberOfTeachers = useMemo(
-        () => normalizeCount(dashboardStats?.total_teachers),
-        [dashboardStats?.total_teachers]
+        () => normalizeCount(userStats?.total_teachers ?? dashboardStats?.total_teachers),
+        [userStats?.total_teachers, dashboardStats?.total_teachers]
+    );
+
+    const numberOfParents = useMemo(
+        () => normalizeCount(userStats?.total_parents),
+        [userStats?.total_parents]
+    );
+
+    const numberOfFinance = useMemo(
+        () => normalizeCount(userStats?.total_finance_users),
+        [userStats?.total_finance_users]
+    );
+
+    const numberOfMedical = useMemo(
+        () => normalizeCount(userStats?.total_medical_staff),
+        [userStats?.total_medical_staff]
+    );
+
+    const numberOfAdmins = useMemo(
+        () => normalizeCount(userStats?.total_admins ?? dashboardStats?.total_admins),
+        [userStats?.total_admins, dashboardStats?.total_admins]
+    );
+
+    const numberOfPrincipals = useMemo(
+        () => normalizeCount(userStats?.total_principals ?? dashboardStats?.total_principals),
+        [userStats?.total_principals, dashboardStats?.total_principals]
     );
 
     // Memoize academic years
@@ -269,7 +313,7 @@ const AdminHomePage = () => {
         },
         {
             title: 'Total Teachers',
-            value: numberOfTeachers,
+            value: normalizeCount(userStats?.total_teachers ?? numberOfTeachers),
             icon: MdPeople,
             image: Teachers,
             color: 'bg-green-600',
@@ -290,8 +334,82 @@ const AdminHomePage = () => {
             route: '/Admin/subjects-management',
             action: () => handleNavigate('/Admin/subjects-management'),
             description: 'Available subjects'
+        },
+        {
+            title: 'Parents',
+            value: numberOfParents,
+            icon: MdPeople,
+            image: Fees,
+            color: 'bg-indigo-600',
+            lightColor: 'bg-indigo-50',
+            textColor: 'text-indigo-600',
+            route: '/Admin/users?tab=parents',
+            action: () => handleNavigate('/Admin/users?tab=parents'),
+            description: 'Registered parents'
+        },
+        {
+            title: 'Finance Users',
+            value: numberOfFinance,
+            icon: MdPeople,
+            image: Fees,
+            color: 'bg-amber-600',
+            lightColor: 'bg-amber-50',
+            textColor: 'text-amber-600',
+            route: '/Admin/users?tab=finance',
+            action: () => handleNavigate('/Admin/users?tab=finance'),
+            description: 'Finance/accounts team'
+        },
+        {
+            title: 'Medical Staff',
+            value: numberOfMedical,
+            icon: MdPeople,
+            image: Fees,
+            color: 'bg-lime-600',
+            lightColor: 'bg-lime-50',
+            textColor: 'text-lime-600',
+            route: '/Admin/users?tab=medical',
+            action: () => handleNavigate('/Admin/users?tab=medical'),
+            description: 'Health team'
+        },
+        {
+            title: 'Admin Accounts',
+            value: normalizeCount(userStats?.total_admins ?? numberOfAdmins),
+            icon: MdSecurity,
+            image: Fees,
+            color: 'bg-pink-600',
+            lightColor: 'bg-pink-50',
+            textColor: 'text-pink-600',
+            route: '/Admin/users',
+            action: () => handleNavigate('/Admin/users'),
+            description: 'Super admins & admins'
+        },
+        {
+            title: 'Principal Accounts',
+            value: normalizeCount(userStats?.total_principals ?? numberOfPrincipals),
+            icon: MdSecurity,
+            image: Fees,
+            color: 'bg-teal-600',
+            lightColor: 'bg-teal-50',
+            textColor: 'text-teal-600',
+            route: '/Admin/users',
+            action: () => handleNavigate('/Admin/users?tab=principals'),
+            description: 'Principal profiles'
         }
-    ], [numberOfStudents, numberOfClasses, numberOfTeachers, totalSubjects, handleNavigate]);
+    ], [
+        numberOfStudents,
+        numberOfClasses,
+        numberOfTeachers,
+        totalSubjects,
+        numberOfParents,
+        numberOfFinance,
+        numberOfMedical,
+        numberOfAdmins,
+        numberOfPrincipals,
+        handleNavigate,
+        userStats?.total_teachers,
+        userStats?.total_admins,
+        userStats?.total_principals
+    ]);
 
     // Memoize quick actions
     const quickActions = useMemo(() => [

@@ -9,10 +9,13 @@ use App\Models\ResultModel;
 use App\Models\Teacher;
 use App\Models\GradeUpdateRequest;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 use Firebase\JWT\JWT;
 
 class ExamOfficerController
 {
+    use LogsActivity;
+
     private $examOfficerModel;
     private $resultModel;
     private $teacherModel;
@@ -888,5 +891,6 @@ class ExamOfficerController
         }
     }
 }
+
 
 

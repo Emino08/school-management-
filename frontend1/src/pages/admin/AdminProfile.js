@@ -1,108 +1,246 @@
 import { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Pencil, Save, X, Info } from 'lucide-react';
+import { authSuccess } from '@/redux/userRelated/userSlice';
+import { useNavigate } from 'react-router-dom';
 
 const AdminProfile = () => {
   const { currentUser } = useSelector((state) => state.user);
-  const [schoolSettings, setSchoolSettings] = useState(null);
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  
+  // Personal info only
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   useEffect(() => {
-    const fetchSettings = async () => {
-      if (!currentUser?.token) return;
-      setLoading(true);
-      try {
-        const res = await axios.get('/admin/settings', {
-          skipAuthRedirect: true,
-          headers: currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {},
-        });
-        if (res.data?.success) {
-          setSchoolSettings(res.data.settings?.general || null);
-        } else if (res.data?.message) {
-          toast.error(res.data.message || 'Failed to load school profile');
-        }
-      } catch (error) {
-        if (error.response?.status === 401) {
-          toast.error('Your session has expired. Please log in again.');
-          localStorage.removeItem('user');
-        } else {
-          toast.error('Failed to load school profile');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSettings();
-  }, [currentUser?.token]);
+    if (currentUser) {
+      setName(currentUser?.name || '');
+      setEmail(currentUser?.email || '');
+      setPhone(currentUser?.phone || '');
+    }
+  }, [currentUser]);
 
-  const general = schoolSettings || {};
+  const handleSave = async () => {
+    if (password && password !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    
+    if (!name.trim()) {
+      toast.error('Name is required');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        contact_name: name,
+        phone,
+      };
+      
+      if (password && password.trim() !== '') {
+        payload.password = password;
+      }
+      
+      await axios.put(`/admin/profile`, payload, {
+        headers: { Authorization: `Bearer ${currentUser.token}` },
+      });
+      
+      // Update Redux store with new data
+      dispatch(authSuccess({
+        ...currentUser,
+        name,
+        phone,
+      }));
+      
+      toast.success('Profile updated successfully');
+      setEditing(false);
+      setPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      toast.error(error.response?.data?.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setName(currentUser?.name || '');
+    setEmail(currentUser?.email || '');
+    setPhone(currentUser?.phone || '');
+    setPassword('');
+    setConfirmPassword('');
+    setEditing(false);
+  };
 
   return (
     <div className="container mx-auto p-6 max-w-3xl space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Account Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-base">
-            <span className="font-semibold">Name:</span> {currentUser?.name || '—'}
-          </p>
-          <p className="text-base">
-            <span className="font-semibold">Email:</span> {currentUser?.email || '—'}
-          </p>
-          <p className="text-base">
-            <span className="font-semibold">Role:</span> {currentUser?.role || 'Admin'}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">My Profile</h1>
+          <p className="text-gray-600 mt-1">Manage your personal information</p>
+        </div>
+        {!editing && (
+          <Button onClick={() => setEditing(true)}>
+            <Pencil className="w-4 h-4 mr-2" />
+            Edit Profile
+          </Button>
+        )}
+      </div>
 
+      {/* Info Alert */}
+      <Alert className="bg-blue-50 border-blue-200">
+        <Info className="h-4 w-4 text-blue-600" />
+        <AlertDescription className="text-blue-800">
+          To edit school information (name, address, etc.), please go to{' '}
+          <button 
+            onClick={() => navigate('/Admin/settings')}
+            className="font-semibold underline hover:text-blue-900"
+          >
+            System Settings → General
+          </button>
+        </AlertDescription>
+      </Alert>
+
+      {/* Personal Information Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">School Profile</CardTitle>
+          <CardTitle>Personal Information</CardTitle>
+          <CardDescription>
+            Your account details and contact information
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {loading ? (
-            <p className="text-sm text-gray-500">Loading school information...</p>
-          ) : (
-            <>
-              <div className="space-y-1">
-                <p className="text-base">
-                  <span className="font-semibold">School Name:</span>{' '}
-                  {general.school_name || currentUser?.schoolName || '—'}
-                </p>
-                <p className="text-base">
-                  <span className="font-semibold">School Code:</span>{' '}
-                  {general.school_code || '—'}
-                </p>
-                <p className="text-base">
-                  <span className="font-semibold">Website:</span>{' '}
-                  {general.school_website || '—'}
-                </p>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Full Name */}
+            <div className="space-y-2">
+              <Label htmlFor="name">Full Name *</Label>
+              {editing ? (
+                <Input 
+                  id="name" 
+                  value={name} 
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  placeholder="Enter your full name"
+                />
+              ) : (
+                <div className="text-base p-3 bg-gray-50 rounded-md border">
+                  {name || '—'}
+                </div>
+              )}
+            </div>
+            
+            {/* Email (Read-only) */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <div className="text-base p-3 bg-gray-100 rounded-md border border-gray-300 text-gray-600">
+                {email || '—'}
               </div>
-
-              <Separator />
-
-              <div className="space-y-1">
-                <p className="text-base">
-                  <span className="font-semibold">Address:</span>{' '}
-                  {general.school_address || 'Not provided'}
+              <p className="text-xs text-gray-500">Email cannot be changed</p>
+            </div>
+            
+            {/* Phone */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone Number</Label>
+              {editing ? (
+                <Input 
+                  id="phone" 
+                  value={phone} 
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+1234567890"
+                  type="tel"
+                />
+              ) : (
+                <div className="text-base p-3 bg-gray-50 rounded-md border">
+                  {phone || 'Not provided'}
+                </div>
+              )}
+            </div>
+            
+            {/* Role (Read-only) */}
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <div className="text-base p-3 bg-gray-100 rounded-md border border-gray-300 text-gray-600">
+                {currentUser?.role || 'Admin'}
+              </div>
+            </div>
+          </div>
+          
+          {/* Password Change Section */}
+          {editing && (
+            <>
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-4">Change Password</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Leave blank if you don't want to change your password
                 </p>
-                <p className="text-base">
-                  <span className="font-semibold">Phone:</span>{' '}
-                  {general.school_phone || 'Not provided'}
-                </p>
-                <p className="text-base">
-                  <span className="font-semibold">Contact Email:</span>{' '}
-                  {general.school_email || currentUser?.email || 'Not provided'}
-                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="password">New Password</Label>
+                    <Input 
+                      id="password" 
+                      type="password" 
+                      value={password} 
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter new password"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                    <Input 
+                      id="confirmPassword" 
+                      type="password" 
+                      value={confirmPassword} 
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+                </div>
               </div>
             </>
           )}
         </CardContent>
       </Card>
+
+      {/* Action Buttons */}
+      {editing && (
+        <div className="flex justify-end gap-3">
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={handleCancel}
+            disabled={saving}
+          >
+            <X className="w-4 h-4 mr-2" />
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSave}
+            disabled={saving}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

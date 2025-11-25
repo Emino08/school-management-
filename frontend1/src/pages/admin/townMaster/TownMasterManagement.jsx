@@ -59,8 +59,6 @@ const TownMasterManagement = () => {
     description: '',
   });
 
-  const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
-
   useEffect(() => {
     fetchTowns();
     fetchTeachers();
@@ -69,7 +67,7 @@ const TownMasterManagement = () => {
   const fetchTowns = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/admin/towns`, {
+      const response = await axios.get('/admin/towns', {
         headers: { Authorization: `Bearer ${currentUser?.token}` }
       });
       
@@ -86,7 +84,7 @@ const TownMasterManagement = () => {
 
   const fetchTeachers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/teachers`, {
+      const response = await axios.get('/teachers', {
         headers: { Authorization: `Bearer ${currentUser?.token}` }
       });
       
@@ -100,7 +98,7 @@ const TownMasterManagement = () => {
 
   const fetchTownBlocks = async (townId) => {
     try {
-      const response = await axios.get(`${API_URL}/admin/towns/${townId}/blocks`, {
+      const response = await axios.get(`/admin/towns/${townId}/blocks`, {
         headers: { Authorization: `Bearer ${currentUser?.token}` }
       });
       
@@ -120,7 +118,7 @@ const TownMasterManagement = () => {
     }
 
     try {
-      const response = await axios.post(`${API_URL}/admin/towns`, formData, {
+      const response = await axios.post('/admin/towns', formData, {
         headers: { Authorization: `Bearer ${currentUser?.token}` }
       });
 
@@ -141,7 +139,7 @@ const TownMasterManagement = () => {
 
     try {
       const response = await axios.put(
-        `${API_URL}/admin/towns/${selectedTown.id}`,
+        `/admin/towns/${selectedTown.id}`,
         formData,
         {
           headers: { Authorization: `Bearer ${currentUser?.token}` }
@@ -165,7 +163,7 @@ const TownMasterManagement = () => {
     if (!selectedTown) return;
 
     try {
-      const response = await axios.delete(`${API_URL}/admin/towns/${selectedTown.id}`, {
+      const response = await axios.delete(`/admin/towns/${selectedTown.id}`, {
         headers: { Authorization: `Bearer ${currentUser?.token}` }
       });
 

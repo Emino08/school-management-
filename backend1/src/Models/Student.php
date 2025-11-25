@@ -29,7 +29,7 @@ class Student extends BaseModel
 
     public function getStudentsWithEnrollment($adminId, $academicYearId)
     {
-        $sql = "SELECT s.*, se.class_id, se.status, se.class_average, se.attendance_percentage,
+        $sql = "SELECT s.*, se.class_id, s.status, se.class_average, se.attendance_percentage,
                        c.class_name, c.section
                 FROM {$this->table} s
                 LEFT JOIN student_enrollments se ON s.id = se.student_id AND se.academic_year_id = :academic_year_id
@@ -47,7 +47,7 @@ class Student extends BaseModel
 
     public function getStudentsByClass($classId, $academicYearId)
     {
-        $sql = "SELECT s.*, se.status, se.class_average, se.attendance_percentage
+        $sql = "SELECT s.*, s.status, se.class_average, se.attendance_percentage
                 FROM {$this->table} s
                 INNER JOIN student_enrollments se ON s.id = se.student_id
                 WHERE se.class_id = :class_id AND se.academic_year_id = :academic_year_id

@@ -31,16 +31,42 @@ class TownMasterController
 
         try {
             $stmt = $this->db->prepare("
-                SELECT t.*, 
-                    COUNT(DISTINCT b.id) as block_count,
-                    COUNT(DISTINCT tm.id) as master_count,
-                    CONCAT(tm.first_name, ' ', tm.last_name) as town_master_name
+                SELECT 
+                    t.*,
+                    COALESCE(bc.block_count, 0) AS block_count,
+                    COALESCE(sc.student_count, 0) AS student_count,
+                    CONCAT(tm.first_name, ' ', tm.last_name) AS town_master_name,
+                    COALESCE(att.present_30d, 0) AS attendance_present_30d,
+                    COALESCE(att.absent_30d, 0) AS attendance_absent_30d,
+                    COALESCE(att.total_30d, 0) AS attendance_total_30d,
+                    COALESCE(att.attendance_rate_30d, 0) AS attendance_rate_30d
                 FROM towns t
-                LEFT JOIN blocks b ON t.id = b.town_id
                 LEFT JOIN town_masters tmaster ON t.id = tmaster.town_id AND tmaster.is_active = TRUE
                 LEFT JOIN teachers tm ON tmaster.teacher_id = tm.id
+                LEFT JOIN (
+                    SELECT town_id, COUNT(*) AS block_count 
+                    FROM blocks 
+                    GROUP BY town_id
+                ) bc ON bc.town_id = t.id
+                LEFT JOIN (
+                    SELECT b.town_id, COUNT(DISTINCT sb.student_id) AS student_count
+                    FROM student_blocks sb
+                    INNER JOIN blocks b ON sb.block_id = b.id
+                    WHERE sb.is_active = TRUE
+                    GROUP BY b.town_id
+                ) sc ON sc.town_id = t.id
+                LEFT JOIN (
+                    SELECT 
+                        town_id,
+                        SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) AS present_30d,
+                        SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) AS absent_30d,
+                        COUNT(*) AS total_30d,
+                        ROUND((SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) * 100) / NULLIF(COUNT(*), 0), 2) AS attendance_rate_30d
+                    FROM town_attendance
+                    WHERE date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                    GROUP BY town_id
+                ) att ON att.town_id = t.id
                 WHERE t.admin_id = :admin_id
-                GROUP BY t.id
                 ORDER BY t.name
             ");
             $stmt->execute(['admin_id' => $user->id]);
@@ -752,7 +778,14 @@ class TownMasterController
             foreach ($data['attendance'] as $record) {
                 // Get student_id and block_id from student_block_id
                 $stmtBlock = $this->db->prepare("
-                    SELECT student_id, block_id FROM student_blocks WHERE id = :id
+                    SELECT 
+                        sb.student_id, 
+                        sb.block_id,
+                        s.name AS student_name,
+                        s.id_number
+                    FROM student_blocks sb
+                    INNER JOIN students s ON sb.student_id = s.id
+                    WHERE sb.id = :id
                 ");
                 $stmtBlock->execute(['id' => $record['student_block_id']]);
                 $studentBlock = $stmtBlock->fetch(PDO::FETCH_ASSOC);
@@ -775,14 +808,19 @@ class TownMasterController
                 ]);
 
                 if ($record['status'] === 'absent') {
-                    $absentStudents[] = $studentBlock['student_id'];
+                    $absentStudents[] = [
+                        'student_id' => $studentBlock['student_id'],
+                        'student_block_id' => $record['student_block_id'],
+                        'student_name' => $studentBlock['student_name'] ?? null,
+                        'id_number' => $studentBlock['id_number'] ?? null
+                    ];
                 }
             }
 
             // Send notifications to parents of absent students
             if (!empty($absentStudents)) {
                 $this->notifyParentsOfAbsence($absentStudents, $date);
-                $this->trackAttendanceStrikes($absentStudents);
+                $this->trackAttendanceStrikes($absentStudents, $date, $academicYearId, $term, $townMaster['town_id']);
             }
 
             $this->db->commit();
@@ -921,27 +959,36 @@ class TownMasterController
     /**
      * Notify parents of student absence
      */
-    private function notifyParentsOfAbsence($studentBlockIds, $date)
+    private function notifyParentsOfAbsence(array $absentStudents, string $date): void
     {
         try {
-            $placeholders = implode(',', array_fill(0, count($studentBlockIds), '?'));
+            if (empty($absentStudents)) {
+                return;
+            }
+
+            $studentIds = array_unique(array_map(function ($student) {
+                return $student['student_id'];
+            }, $absentStudents));
+
+            $placeholders = implode(',', array_fill(0, count($studentIds), '?'));
             
             $stmt = $this->db->prepare("
-                SELECT sb.student_id, s.name as student_name, 
+                SELECT s.id AS student_id, s.name as student_name, s.id_number,
                     sb.guardian_name, sb.guardian_email, sb.guardian_phone,
                     p.id as parent_id, p.email as parent_email
-                FROM student_blocks sb
-                INNER JOIN students s ON sb.student_id = s.id
+                FROM students s
+                LEFT JOIN student_blocks sb ON sb.student_id = s.id AND sb.is_active = TRUE
                 LEFT JOIN parent_students ps ON s.id = ps.student_id AND ps.verified = TRUE
                 LEFT JOIN parents p ON ps.parent_id = p.id
-                WHERE sb.id IN ($placeholders)
+                WHERE s.id IN ($placeholders)
             ");
-            $stmt->execute($studentBlockIds);
+            $stmt->execute($studentIds);
             $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             foreach ($students as $student) {
                 // Create notification
-                $message = "Your child {$student['student_name']} was absent from town roll call on {$date}.";
+                $studentName = $student['student_name'] ?? 'student';
+                $message = "Your child {$studentName} was absent from town roll call on {$date}.";
                 
                 // Insert notification for parent if exists
                 if ($student['parent_id']) {
@@ -955,13 +1002,7 @@ class TownMasterController
                         'message' => $message
                     ]);
                 }
-
-                // TODO: Send email/SMS to guardian_email/guardian_phone if provided
-                // This would integrate with your email service
             }
-
-            // Track attendance strikes
-            $this->trackAttendanceStrikes($students);
         } catch (\Exception $e) {
             error_log("Failed to notify parents: " . $e->getMessage());
         }
@@ -970,75 +1011,172 @@ class TownMasterController
     /**
      * Track attendance strikes and create urgent notifications
      */
-    private function trackAttendanceStrikes($students)
+    private function trackAttendanceStrikes(array $absentStudents, string $date, ?int $academicYearId, ?int $term, ?int $townId): void
     {
         try {
-            foreach ($students as $student) {
-                // Get or create attendance strike record
-                $stmt = $this->db->prepare("
-                    INSERT INTO attendance_strikes 
-                    (student_id, academic_year_id, term, absence_count, last_absence_date)
-                    VALUES (:student_id, 
-                        (SELECT academic_year_id FROM student_blocks WHERE student_id = :student_id2 LIMIT 1),
-                        (SELECT term FROM student_blocks WHERE student_id = :student_id3 LIMIT 1),
-                        1, CURDATE())
-                    ON DUPLICATE KEY UPDATE
-                    absence_count = absence_count + 1,
-                    last_absence_date = CURDATE()
-                ");
-                $stmt->execute([
-                    'student_id' => $student['student_id'],
-                    'student_id2' => $student['student_id'],
-                    'student_id3' => $student['student_id']
-                ]);
+            $yearId = $academicYearId ?? $this->getActiveAcademicYearId();
+            if (!$yearId || empty($absentStudents)) {
+                return;
+            }
+            $termValue = $term ?? $this->getTermFromStudentBlocks($absentStudents);
 
-                // Check if reached 3 strikes
-                $stmt = $this->db->prepare("
-                    SELECT * FROM attendance_strikes 
-                    WHERE student_id = :student_id AND absence_count >= 3
-                ");
-                $stmt->execute(['student_id' => $student['student_id']]);
-                $strike = $stmt->fetch(PDO::FETCH_ASSOC);
+            foreach ($absentStudents as $student) {
+                $studentId = (int)$student['student_id'];
+                $studentName = $student['student_name'] ?? ('ID ' . $studentId);
 
-                if ($strike && !$strike['notification_sent']) {
-                    // Create urgent notification for principal
+                // Calculate consecutive absences (latest first)
+                $streak = $this->calculateTownAbsenceStreak($studentId, $townId);
+
+                // Get existing strike record to avoid duplicate notifications for same streak
+                $existingStrike = $this->getStrikeRecord($studentId, $yearId, $termValue);
+                $alreadyNotified = $existingStrike && (bool)$existingStrike['notification_sent'];
+                $shouldNotify = $streak >= 3 && !$alreadyNotified;
+                $markNotified = $streak >= 3 ? ($alreadyNotified || $shouldNotify) : false;
+
+                $this->upsertStrikeRecord($studentId, $yearId, $termValue, $streak, $date, $markNotified);
+
+                if ($shouldNotify) {
+                    // Notify principal/admin
+                    $message = "Student {$studentName} has missed three consecutive town roll calls. Please follow up.";
                     $stmt = $this->db->prepare("
-                        INSERT INTO notifications 
-                        (user_id, user_role, message, notification_type, requires_action)
-                        SELECT id, 'Admin', 
-                            'Student {$student['student_name']} has missed 3 or more attendances.',
-                            'urgent', TRUE
+                        INSERT INTO notifications (user_id, user_role, message, notification_type, requires_action)
+                        SELECT id, 'Admin', :message, 'urgent', TRUE
                         FROM admins 
-                        WHERE role = 'principal' OR role = 'admin'
+                        WHERE role IN ('principal', 'admin')
                     ");
-                    $stmt->execute();
+                    $stmt->execute(['message' => $message]);
 
                     $notificationId = $this->db->lastInsertId();
 
-                    // Create urgent notification record
+                    // Track in urgent_notifications table for auditability
                     $stmt = $this->db->prepare("
                         INSERT INTO urgent_notifications 
                         (notification_id, student_id, incident_type, description)
                         VALUES (:notification_id, :student_id, 'attendance_3_strikes', 
-                            'Student has been absent {$strike['absence_count']} times')
+                            'Student has been absent {$streak} consecutive times in town attendance')
                     ");
                     $stmt->execute([
                         'notification_id' => $notificationId,
-                        'student_id' => $student['student_id']
+                        'student_id' => $studentId
                     ]);
-
-                    // Mark as notified
-                    $stmt = $this->db->prepare("
-                        UPDATE attendance_strikes 
-                        SET notification_sent = TRUE, notification_sent_at = NOW()
-                        WHERE id = :id
-                    ");
-                    $stmt->execute(['id' => $strike['id']]);
                 }
             }
         } catch (\Exception $e) {
             error_log("Failed to track attendance strikes: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Get the current active academic year id
+     */
+    private function getActiveAcademicYearId(): ?int
+    {
+        $stmt = $this->db->query("SELECT id FROM academic_years WHERE is_active = TRUE LIMIT 1");
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? (int)$row['id'] : null;
+    }
+
+    /**
+     * Get a term value from the provided student block data
+     */
+    private function getTermFromStudentBlocks(array $absentStudents): int
+    {
+        if (empty($absentStudents)) {
+            return 1;
+        }
+
+        $studentId = $absentStudents[0]['student_id'];
+        $stmt = $this->db->prepare("SELECT term FROM student_blocks WHERE student_id = :student_id ORDER BY assigned_at DESC LIMIT 1");
+        $stmt->execute(['student_id' => $studentId]);
+        $term = $stmt->fetchColumn();
+        return (int)($term ?: 1);
+    }
+
+    /**
+     * Calculate consecutive absence streak for a town student
+     */
+    private function calculateTownAbsenceStreak(int $studentId, ?int $townId): int
+    {
+        $query = "
+            SELECT status 
+            FROM town_attendance 
+            WHERE student_id = :student_id
+        ";
+
+        $params = ['student_id' => $studentId];
+
+        if ($townId) {
+            $query .= " AND town_id = :town_id";
+            $params['town_id'] = $townId;
+        }
+
+        $query .= " ORDER BY date DESC, time DESC LIMIT 3";
+
+        $stmt = $this->db->prepare($query);
+        $stmt->execute($params);
+        $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $streak = 0;
+        foreach ($records as $record) {
+            if (strtolower($record['status']) === 'absent') {
+                $streak++;
+            } else {
+                break;
+            }
+        }
+
+        return $streak;
+    }
+
+    /**
+     * Fetch an attendance strike record for a student/year/term
+     */
+    private function getStrikeRecord(int $studentId, ?int $yearId, int $term): ?array
+    {
+        $stmt = $this->db->prepare("
+            SELECT * FROM attendance_strikes 
+            WHERE student_id = :student_id AND academic_year_id = :year_id AND term = :term
+            LIMIT 1
+        ");
+        $stmt->execute([
+            'student_id' => $studentId,
+            'year_id' => $yearId,
+            'term' => $term
+        ]);
+
+        $record = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $record ?: null;
+    }
+
+    /**
+     * Upsert strike record with latest streak and notification state
+     */
+    private function upsertStrikeRecord(int $studentId, ?int $yearId, int $term, int $streak, string $date, bool $notificationSent): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO attendance_strikes 
+                (student_id, academic_year_id, term, absence_count, last_absence_date, notification_sent, notification_sent_at)
+            VALUES 
+                (:student_id, :year_id, :term, :absence_count, :last_absence_date, :notification_sent, 
+                 CASE WHEN :notification_sent = TRUE THEN NOW() ELSE NULL END)
+            ON DUPLICATE KEY UPDATE
+                absence_count = VALUES(absence_count),
+                last_absence_date = VALUES(last_absence_date),
+                notification_sent = VALUES(notification_sent),
+                notification_sent_at = CASE 
+                    WHEN VALUES(notification_sent) = TRUE THEN COALESCE(attendance_strikes.notification_sent_at, NOW()) 
+                    ELSE NULL 
+                END
+        ");
+
+        $stmt->execute([
+            'student_id' => $studentId,
+            'year_id' => $yearId,
+            'term' => $term,
+            'absence_count' => $streak,
+            'last_absence_date' => $date,
+            'notification_sent' => $notificationSent
+        ]);
     }
 
     /**

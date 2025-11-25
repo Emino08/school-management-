@@ -6,9 +6,12 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Models\AcademicYear;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
 
 class TimetableController
 {
+    use LogsActivity;
+
     private $db;
     private $academicYearModel;
 
@@ -591,3 +594,4 @@ class TimetableController
         }
     }
 }
+

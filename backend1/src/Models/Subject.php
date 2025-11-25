@@ -95,7 +95,6 @@ class Subject extends BaseModel
                            SELECT COUNT(DISTINCT se.student_id)
                            FROM student_enrollments se
                            WHERE se.class_id = s.class_id
-                             AND se.status = 'active'
                        ) AS student_count
                 FROM {$this->table} s
                 LEFT JOIN classes c ON s.class_id = c.id

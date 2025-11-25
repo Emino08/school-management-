@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,9 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Home, Plus, Edit, Trash2, Users, User } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+import { Home, Plus, Edit, Trash2, Users, User, BarChart2 } from 'lucide-react';
 
 const TownMasterManagement = () => {
   const { currentUser } = useSelector((state) => state.user);
@@ -55,7 +53,7 @@ const TownMasterManagement = () => {
   const fetchTowns = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/admin/towns`, {
+      const response = await axios.get('/admin/towns', {
         headers: { Authorization: `Bearer ${currentUser?.token}` },
       });
       if (response.data.success) {
@@ -71,7 +69,7 @@ const TownMasterManagement = () => {
 
   const fetchTeachers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/teachers`, {
+      const response = await axios.get('/teachers', {
         headers: { Authorization: `Bearer ${currentUser?.token}` },
       });
       if (response.data.success) {
@@ -90,7 +88,7 @@ const TownMasterManagement = () => {
 
     try {
       const response = await axios.post(
-        `${API_URL}/admin/towns`,
+        '/admin/towns',
         formData,
         { headers: { Authorization: `Bearer ${currentUser?.token}` } }
       );
@@ -117,7 +115,7 @@ const TownMasterManagement = () => {
 
     try {
       const response = await axios.put(
-        `${API_URL}/admin/towns/${selectedTown.id}`,
+        `/admin/towns/${selectedTown.id}`,
         formData,
         { headers: { Authorization: `Bearer ${currentUser?.token}` } }
       );
@@ -141,7 +139,7 @@ const TownMasterManagement = () => {
     if (!confirm('Are you sure you want to delete this town?')) return;
 
     try {
-      const response = await axios.delete(`${API_URL}/admin/towns/${townId}`, {
+      const response = await axios.delete(`/admin/towns/${townId}`, {
         headers: { Authorization: `Bearer ${currentUser?.token}` },
       });
 
@@ -165,7 +163,7 @@ const TownMasterManagement = () => {
 
     try {
       const response = await axios.post(
-        `${API_URL}/admin/towns/${selectedTown.id}/assign-master`,
+        `/admin/towns/${selectedTown.id}/assign-master`,
         { teacher_id: teacherId },
         { headers: { Authorization: `Bearer ${currentUser?.token}` } }
       );
@@ -201,8 +199,55 @@ const TownMasterManagement = () => {
     setShowAssignDialog(true);
   };
 
+  const totalBlocks = towns.reduce((sum, town) => sum + (town.block_count || 0), 0);
+  const totalStudents = towns.reduce((sum, town) => sum + (town.student_count || 0), 0);
+  const averageAttendance = towns.length
+    ? (
+        towns.reduce((sum, town) => sum + (town.attendance_rate_30d || 0), 0) / towns.length
+      ).toFixed(1)
+    : 0;
+
   return (
     <div className="container mx-auto p-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-gray-500">Towns</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <div className="text-2xl font-semibold">{towns.length}</div>
+            <Home className="w-5 h-5 text-blue-600" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-gray-500">Blocks</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <div className="text-2xl font-semibold">{totalBlocks || 6}</div>
+            <Users className="w-5 h-5 text-indigo-600" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-gray-500">Students (towns)</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <div className="text-2xl font-semibold">{totalStudents}</div>
+            <User className="w-5 h-5 text-emerald-600" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-gray-500">Attendance (30d avg)</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <div className="text-2xl font-semibold">{averageAttendance}%</div>
+            <BarChart2 className="w-5 h-5 text-orange-600" />
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
@@ -228,32 +273,43 @@ const TownMasterManagement = () => {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Town Name</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Blocks</TableHead>
-                  <TableHead>Town Master</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+              <TableRow>
+                <TableHead>Town Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Blocks</TableHead>
+                <TableHead>Students</TableHead>
+                <TableHead>Attendance (30d)</TableHead>
+                <TableHead>Town Master</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
               <TableBody>
                 {towns.map((town) => (
-                  <TableRow key={town.id}>
-                    <TableCell className="font-medium">{town.name}</TableCell>
-                    <TableCell>{town.description || 'N/A'}</TableCell>
-                    <TableCell>
-                      {town.blocks?.length || 6} Blocks (A-F)
-                    </TableCell>
-                    <TableCell>
-                      {town.town_master ? (
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4" />
-                          {town.town_master.name || 'N/A'}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">Not assigned</span>
-                      )}
-                    </TableCell>
+                <TableRow key={town.id}>
+                  <TableCell className="font-medium">{town.name}</TableCell>
+                  <TableCell>{town.description || 'N/A'}</TableCell>
+                  <TableCell>
+                    {town.block_count ?? 6} Blocks
+                  </TableCell>
+                  <TableCell>{town.student_count ?? 0}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col text-sm">
+                      <span className="font-semibold">{(town.attendance_rate_30d ?? 0)}%</span>
+                      <span className="text-gray-500">
+                        P: {town.attendance_present_30d ?? 0} | A: {town.attendance_absent_30d ?? 0}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {town.town_master?.name || town.town_master_name ? (
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4" />
+                        {town.town_master?.name || town.town_master_name}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">Not assigned</span>
+                    )}
+                  </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button

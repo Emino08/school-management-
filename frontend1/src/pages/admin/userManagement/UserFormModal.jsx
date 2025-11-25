@@ -46,9 +46,9 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
     if (user) {
       setFormData((prev) => ({
         ...prev,
-        name: user.name || '',
+        name: user.name || user.contact_name || '',
         email: user.email || '',
-        phone: user.phone || '',
+        phone: user.phone || user.school_phone || '',
         address: user.address || '',
         id_number: user.id_number || '',
         date_of_birth: user.date_of_birth || '',
@@ -178,6 +178,7 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
       case 'finance': return 'finance';
       case 'medical': return 'medical';
       case 'parents': return 'parent';
+      case 'admins': return 'admin';
       case 'principals': return 'principal';
       default: return 'user';
     }
@@ -190,6 +191,7 @@ const UserFormModal = ({ isOpen, userType, user, onClose, onSubmit }) => {
       case 'finance': return 'Finance User';
       case 'medical': return 'Medical Staff';
       case 'parents': return 'Parent';
+      case 'admins': return 'Admin';
       case 'principals': return 'Principal';
       default: return 'User';
     }

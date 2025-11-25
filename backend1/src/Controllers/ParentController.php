@@ -2,12 +2,16 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
+use App\Models\Admin;
 use App\Models\ParentUser;
 use App\Models\ParentNotification;
 use App\Models\Student;
 use App\Models\Attendance;
 use App\Models\ExamResult;
 use App\Models\Notice;
+use App\Models\AcademicYear;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Firebase\JWT\JWT;
@@ -15,12 +19,16 @@ use Firebase\JWT\Key;
 
 class ParentController
 {
+    use LogsActivity;
+
     private $parentModel;
     private $studentModel;
     private $notificationModel;
     private $attendanceModel;
     private $resultModel;
     private $noticeModel;
+    private $academicYearModel;
+    private $adminModel;
 
     public function __construct()
     {
@@ -30,6 +38,8 @@ class ParentController
         $this->attendanceModel = new Attendance();
         $this->resultModel = new ExamResult();
         $this->noticeModel = new Notice();
+        $this->academicYearModel = new AcademicYear();
+        $this->adminModel = new Admin();
     }
 
     public function register(Request $request, Response $response)
@@ -38,7 +48,7 @@ class ParentController
             $data = $request->getParsedBody();
 
             // Validate required fields
-            $required = ['name', 'email', 'password', 'phone', 'admin_id'];
+            $required = ['name', 'email', 'password', 'phone'];
             foreach ($required as $field) {
                 if (empty($data[$field])) {
                     $response->getBody()->write(json_encode([
@@ -59,9 +69,28 @@ class ParentController
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
             }
 
+            $adminId = isset($data['admin_id']) ? (int) $data['admin_id'] : null;
+            $admin = null;
+            if ($adminId) {
+                $admin = $this->adminModel->findById($adminId);
+            }
+
+            if (!$admin) {
+                $admin = $this->adminModel->getFirstAdmin();
+                if (!$admin) {
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => 'No admin account available. Ask the school to register an admin first.'
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(404);
+                }
+            }
+
+            $adminId = (int) $admin['id'];
+
             // Create parent
             $parentData = [
-                'admin_id' => $data['admin_id'],
+                'admin_id' => $adminId,
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => $data['password'],
@@ -190,7 +219,8 @@ class ParentController
             }
 
             // Link the child
-            $this->parentModel->linkChild($parentId, $student['id'], $student['admin_id']);
+            $relationship = $data['relationship'] ?? 'guardian';
+            $this->parentModel->linkChild($parentId, $student['id'], $student['admin_id'], $relationship);
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -256,8 +286,20 @@ class ParentController
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
             }
 
+            // Get student's admin_id and current academic year
+            $student = $this->studentModel->findById($studentId);
+            $adminId = $student['admin_id'];
+            
+            // Get current academic year
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
+            $academicYearId = $currentYear ? $currentYear['id'] : null;
+
             // Get attendance records
-            $attendance = $this->attendanceModel->getStudentAttendance($studentId);
+            if ($academicYearId) {
+                $attendance = $this->attendanceModel->getStudentAttendance($studentId, $academicYearId);
+            } else {
+                $attendance = [];
+            }
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -524,6 +566,11 @@ class ParentController
             }
 
             unset($parent['password']);
+            
+            // Ensure status is 'active' if not set or if it's 'suspended' incorrectly
+            if (!isset($parent['status']) || empty($parent['status'])) {
+                $parent['status'] = 'active';
+            }
 
             $response->getBody()->write(json_encode([
                 'success' => true,
@@ -579,4 +626,287 @@ class ParentController
             return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
+
+    /**
+     * Add medical record for linked child
+     * Parents can add basic medical information for their children
+     */
+    public function addMedicalRecord(Request $request, Response $response)
+    {
+        try {
+            $parentId = $request->getAttribute('user_id');
+            $data = $request->getParsedBody();
+
+            // Validate required fields
+            $required = ['student_id', 'record_type', 'description'];
+            foreach ($required as $field) {
+                if (empty($data[$field])) {
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => ucfirst(str_replace('_', ' ', $field)) . ' is required'
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+                }
+            }
+
+            // Verify student belongs to this parent
+            $db = \App\Config\Database::getInstance()->getConnection();
+            $stmt = $db->prepare("
+                SELECT s.id, s.admin_id, s.first_name, s.last_name 
+                FROM students s
+                INNER JOIN student_parents sp ON s.id = sp.student_id
+                WHERE sp.parent_id = :parent_id AND s.id = :student_id
+            ");
+            $stmt->execute([
+                ':parent_id' => $parentId,
+                ':student_id' => $data['student_id']
+            ]);
+            $student = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$student) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Student not linked to your account or not found'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+            }
+
+            // Create medical record
+            $medicalRecordModel = new \App\Models\MedicalRecord();
+            
+            $recordData = [
+                'student_id' => $data['student_id'],
+                'admin_id' => $student['admin_id'],
+                'medical_staff_id' => null, // Parent-added records don't have staff ID
+                'parent_id' => $parentId,
+                'added_by' => 'parent',
+                'added_by_parent' => 1,
+                'can_edit_by_parent' => 1, // Parents can update their own records
+                'record_type' => $data['record_type'], // e.g., 'allergy', 'illness', 'injury', 'vaccination'
+                'diagnosis' => $data['description'],
+                'symptoms' => $data['symptoms'] ?? null,
+                'treatment' => $data['treatment'] ?? null,
+                'medication' => $data['medication'] ?? null,
+                'notes' => $data['notes'] ?? 'Added by parent',
+                'severity' => $data['severity'] ?? 'low',
+                'status' => 'active', // Use valid value
+                'date_reported' => date('Y-m-d'),
+                'next_checkup_date' => $data['next_checkup_date'] ?? null
+            ];
+
+            $recordId = $medicalRecordModel->create($recordData);
+
+            // Log activity
+            $this->logActivity(
+                $request,
+                'create',
+                "Parent added medical record for {$student['first_name']} {$student['last_name']} - {$data['record_type']}",
+                'parent',
+                $parentId,
+                ['student_id' => $data['student_id'], 'record_type' => $data['record_type']]
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Medical record added successfully',
+                'record_id' => $recordId
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
+
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to add medical record: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Get medical records for linked children
+     */
+    public function getMedicalRecords(Request $request, Response $response, array $args)
+    {
+        try {
+            $parentId = $request->getAttribute('user_id');
+            $studentId = $args['student_id'] ?? null;
+
+            $db = \App\Config\Database::getInstance()->getConnection();
+            
+            if ($studentId) {
+                // Verify student belongs to this parent
+                $stmt = $db->prepare("
+                    SELECT COUNT(*) as count
+                    FROM student_parents
+                    WHERE parent_id = :parent_id AND student_id = :student_id
+                ");
+                $stmt->execute([
+                    ':parent_id' => $parentId,
+                    ':student_id' => $studentId
+                ]);
+                $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+                
+                if ($result['count'] == 0) {
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => 'Student not linked to your account'
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+                }
+
+                // Get medical records for specific student
+                $stmt = $db->prepare("
+                    SELECT mr.*, 
+                           ms.name as staff_name,
+                           s.first_name, s.last_name
+                    FROM medical_records mr
+                    LEFT JOIN medical_staff ms ON mr.medical_staff_id = ms.id
+                    INNER JOIN students s ON mr.student_id = s.id
+                    WHERE mr.student_id = :student_id
+                    ORDER BY mr.created_at DESC
+                ");
+                $stmt->execute([':student_id' => $studentId]);
+            } else {
+                // Get medical records for all linked children
+                $stmt = $db->prepare("
+                    SELECT mr.*, 
+                           ms.name as staff_name,
+                           s.first_name, s.last_name
+                    FROM medical_records mr
+                    LEFT JOIN medical_staff ms ON mr.medical_staff_id = ms.id
+                    INNER JOIN students s ON mr.student_id = s.id
+                    INNER JOIN student_parents sp ON s.id = sp.student_id
+                    WHERE sp.parent_id = :parent_id
+                    ORDER BY mr.created_at DESC
+                ");
+                $stmt->execute([':parent_id' => $parentId]);
+            }
+
+            $records = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'medical_records' => $records,
+                'count' => count($records),
+                'can_add' => true, // Parents can always add new records
+                'can_update' => true, // Parents can update their own records
+                'can_delete' => false // Parents cannot delete records
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to fetch medical records: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
+
+    /**
+     * Update medical record (parent can only update their own records)
+     */
+    public function updateMedicalRecord(Request $request, Response $response, array $args)
+    {
+        try {
+            $parentId = $request->getAttribute('user_id');
+            $recordId = $args['id'];
+            $data = $request->getParsedBody();
+
+            $db = \App\Config\Database::getInstance()->getConnection();
+            
+            // Verify this record was added by this parent
+            $stmt = $db->prepare("
+                SELECT mr.* 
+                FROM medical_records mr
+                WHERE mr.id = :record_id AND mr.parent_id = :parent_id AND mr.added_by = 'parent'
+            ");
+            $stmt->execute([
+                ':record_id' => $recordId,
+                ':parent_id' => $parentId
+            ]);
+            $record = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$record) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'Record not found or you do not have permission to update it'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(403);
+            }
+
+            // Build update query
+            $updateFields = [];
+            $params = [':record_id' => $recordId];
+
+            if (isset($data['record_type'])) {
+                $updateFields[] = 'record_type = :record_type';
+                $params[':record_type'] = $data['record_type'];
+            }
+            if (isset($data['description'])) {
+                $updateFields[] = 'diagnosis = :description';
+                $params[':description'] = $data['description'];
+            }
+            if (isset($data['symptoms'])) {
+                $updateFields[] = 'symptoms = :symptoms';
+                $params[':symptoms'] = $data['symptoms'];
+            }
+            if (isset($data['treatment'])) {
+                $updateFields[] = 'treatment = :treatment';
+                $params[':treatment'] = $data['treatment'];
+            }
+            if (isset($data['medication'])) {
+                $updateFields[] = 'medication = :medication';
+                $params[':medication'] = $data['medication'];
+            }
+            if (isset($data['severity'])) {
+                $updateFields[] = 'severity = :severity';
+                $params[':severity'] = $data['severity'];
+            }
+            if (isset($data['notes'])) {
+                $updateFields[] = 'notes = :notes';
+                $params[':notes'] = $data['notes'];
+            }
+            if (isset($data['next_checkup_date'])) {
+                $updateFields[] = 'next_checkup_date = :next_checkup_date';
+                $params[':next_checkup_date'] = $data['next_checkup_date'];
+            }
+
+            if (empty($updateFields)) {
+                $response->getBody()->write(json_encode([
+                    'success' => false,
+                    'message' => 'No fields to update'
+                ]));
+                return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+            }
+
+            $sql = "UPDATE medical_records SET " . implode(', ', $updateFields) . ", updated_at = NOW() WHERE id = :record_id";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+
+            // Log activity
+            $this->logActivity(
+                $request,
+                'update',
+                "Parent updated medical record #{$recordId}",
+                'parent',
+                $parentId,
+                ['record_id' => $recordId]
+            );
+
+            $response->getBody()->write(json_encode([
+                'success' => true,
+                'message' => 'Medical record updated successfully'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json');
+
+        } catch (\Exception $e) {
+            $response->getBody()->write(json_encode([
+                'success' => false,
+                'message' => 'Failed to update medical record: ' . $e->getMessage()
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    }
 }
+

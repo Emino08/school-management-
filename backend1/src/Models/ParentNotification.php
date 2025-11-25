@@ -46,6 +46,39 @@ class ParentNotification extends BaseModel
         return $notifications;
     }
 
+    public function notifyAttendanceStreak($studentId, $adminId, $date, $streakCount = 3)
+    {
+        $sql = "SELECT p.id, p.name, p.email, p.notification_preference
+                FROM parents p
+                JOIN parent_student_relations psr ON p.id = psr.parent_id
+                WHERE psr.student_id = :student_id AND psr.is_verified = 1";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':student_id' => $studentId]);
+        $parents = $stmt->fetchAll();
+
+        $studentSql = "SELECT name, id_number FROM students WHERE id = :id";
+        $studentStmt = $this->db->prepare($studentSql);
+        $studentStmt->execute([':id' => $studentId]);
+        $student = $studentStmt->fetch();
+
+        $notifications = [];
+        foreach ($parents as $parent) {
+            $notification = $this->create([
+                'parent_id' => $parent['id'],
+                'student_id' => $studentId,
+                'admin_id' => $adminId,
+                'type' => 'attendance_streak',
+                'title' => 'Attendance Alert',
+                'message' => "Your child {$student['name']} ({$student['id_number']}) has missed {$streakCount} consecutive classes. Latest absence recorded on {$date}. Please engage with the school to resolve this.",
+                'metadata' => json_encode(['date' => $date, 'streak' => $streakCount])
+            ]);
+            $notifications[] = $notification;
+        }
+
+        return $notifications;
+    }
+
     public function notifySuspension($studentId, $adminId, $reason, $startDate, $endDate)
     {
         $sql = "SELECT p.id, p.name, p.email

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,8 +30,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-
 const StudentRegistration = ({ townData, onSuccess }) => {
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -58,7 +56,7 @@ const StudentRegistration = ({ townData, onSuccess }) => {
 
   const fetchClasses = async () => {
     try {
-      const response = await axios.get(`${API_URL}/classes`);
+      const response = await axios.get('/classes');
       if (response.data.success) {
         setClasses(response.data.classes || []);
       }
@@ -69,7 +67,7 @@ const StudentRegistration = ({ townData, onSuccess }) => {
 
   const fetchAcademicYears = async () => {
     try {
-      const response = await axios.get(`${API_URL}/admin/academic-years`);
+      const response = await axios.get('/admin/academic-years');
       if (response.data.success) {
         setAcademicYears(response.data.academic_years || []);
         // Set default to current/active year
@@ -95,7 +93,7 @@ const StudentRegistration = ({ townData, onSuccess }) => {
       if (searchTerm) params.append('search', searchTerm);
       if (selectedClass) params.append('class_id', selectedClass);
 
-      const response = await axios.get(`${API_URL}/students?${params.toString()}`);
+      const response = await axios.get(`/students?${params.toString()}`);
       if (response.data.success) {
         setStudents(response.data.students || []);
         if (response.data.students?.length === 0) {
@@ -136,7 +134,7 @@ const StudentRegistration = ({ townData, onSuccess }) => {
     try {
       setLoading(true);
       const response = await axios.post(
-        `${API_URL}/teacher/town-master/register-student`,
+        '/teacher/town-master/register-student',
         {
           student_id: selectedStudent.id,
           ...registrationData,

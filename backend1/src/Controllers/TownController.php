@@ -249,7 +249,7 @@ class TownController
                 'success' => false,
                 'message' => 'Failed to create block: ' . $e->getMessage()
             ]));
-            return $response->withHeader('Content-Type', 'application/json)->withStatus(500);
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
         }
     }
 

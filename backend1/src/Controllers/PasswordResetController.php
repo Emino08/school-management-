@@ -12,13 +12,19 @@ use PDO;
 class PasswordResetController
 {
     private $db;
-    private $mailer;
 
     public function __construct()
     {
         $this->db = Database::getInstance()->getConnection();
-        $this->mailer = new Mailer();
         $this->ensurePasswordResetTable();
+    }
+    
+    /**
+     * Get fresh Mailer instance with current settings
+     */
+    private function getMailer()
+    {
+        return new Mailer();
     }
 
     /**
@@ -72,54 +78,83 @@ class PasswordResetController
                 return $response->withHeader('Content-Type', 'application/json');
             }
 
+            // Get user name for email
+            $name = $user['name'] ?? $user['contact_name'] ?? $user['school_name'] ?? 'User';
+            
             // Generate reset token
             $token = $this->generateResetToken();
             $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
-
-            // Save token to database
-            $stmt = $this->db->prepare("
-                INSERT INTO password_resets (email, role, token, expires_at, created_at)
-                VALUES (:email, :role, :token, :expires, NOW())
-                ON DUPLICATE KEY UPDATE 
-                    token = :token2, 
-                    expires_at = :expires2, 
-                    created_at = NOW(),
-                    used = 0
-            ");
-
-            $stmt->execute([
-                ':email' => $email,
-                ':role' => $role,
-                ':token' => $token,
-                ':expires' => $expires,
-                ':token2' => $token,
-                ':expires2' => $expires,
-            ]);
-
-            // Send email
-            $name = $user['name'] ?? $user['contact_name'] ?? $user['school_name'] ?? 'User';
             
+            // Send email FIRST before saving token
             try {
-                $emailSent = $this->mailer->sendPasswordResetEmail($email, $name, $token);
-                
-                if ($emailSent) {
-                    $response->getBody()->write(json_encode([
-                        'success' => true,
-                        'message' => 'Password reset link has been sent to your email.'
-                    ]));
-                } else {
+                error_log("Password reset: Attempting to send email to {$email}");
+                $connectionTester = $this->getMailer();
+                $connectionTest = $connectionTester->testConnection();
+
+                if (!$connectionTest['success']) {
+                    error_log("Password reset: SMTP connection failed - " . ($connectionTest['message'] ?? 'Unknown error'));
                     $response->getBody()->write(json_encode([
                         'success' => false,
-                        'message' => 'Failed to send email. Please check email configuration or try again later.',
+                        'message' => 'Unable to connect to the email server. Please verify the admin email settings and try again.',
+                        'error_code' => 'EMAIL_SERVICE_ERROR'
+                    ]));
+                    return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+                }
+
+                // Create fresh Mailer instance to get latest email settings for the actual send
+                $mailer = $this->getMailer();
+
+                error_log("Password reset: SMTP connection successful, sending email...");
+                
+                // Attempt to send email using the same admin-configured settings verified above
+                $emailSent = $mailer->sendPasswordResetEmail($email, $name, $token);
+                
+                if (!$emailSent) {
+                    error_log("Password reset: Email send returned false for {$email}");
+                    $response->getBody()->write(json_encode([
+                        'success' => false,
+                        'message' => 'Failed to send password reset email. Please try again or contact administrator.',
                         'error_code' => 'EMAIL_SEND_FAILED'
                     ]));
                     return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
                 }
+                
+                error_log("Password reset: Email sent successfully to {$email}");
+                
+                // Email sent successfully, NOW save token to database
+                $stmt = $this->db->prepare("
+                    INSERT INTO password_resets (email, role, token, expires_at, created_at)
+                    VALUES (:email, :role, :token, :expires, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        token = :token2, 
+                        expires_at = :expires2, 
+                        created_at = NOW(),
+                        used = 0
+                ");
+
+                $stmt->execute([
+                    ':email' => $email,
+                    ':role' => $role,
+                    ':token' => $token,
+                    ':expires' => $expires,
+                    ':token2' => $token,
+                    ':expires2' => $expires,
+                ]);
+                
+                error_log("Password reset: Token saved to database for {$email}");
+                
+                // Success response
+                $response->getBody()->write(json_encode([
+                    'success' => true,
+                    'message' => 'Password reset link has been sent to your email.'
+                ]));
+                
             } catch (\Exception $emailError) {
-                error_log('Email sending error: ' . $emailError->getMessage());
+                error_log('Password reset: Exception occurred - ' . $emailError->getMessage());
+                error_log('Stack trace: ' . $emailError->getTraceAsString());
                 $response->getBody()->write(json_encode([
                     'success' => false,
-                    'message' => 'Email service error. Please verify email settings or contact the administrator.',
+                    'message' => 'Email service error: ' . $emailError->getMessage(),
                     'error_code' => 'EMAIL_SERVICE_ERROR'
                 ]));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(500);

@@ -23,7 +23,7 @@ abstract class BaseModel
         if (!empty($conditions)) {
             $where = [];
             foreach ($conditions as $key => $value) {
-                $where[] = "$key = :$key";
+                $where[] = "`$key` = :$key";
                 $params[":$key"] = $value;
             }
             $sql .= " WHERE " . implode(' AND ', $where);
@@ -55,7 +55,7 @@ abstract class BaseModel
 
     public function findById($id)
     {
-        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE id = :id LIMIT 1");
+        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE `id` = :id LIMIT 1");
         $stmt->execute([':id' => $id]);
         return $stmt->fetch();
     }
@@ -65,7 +65,7 @@ abstract class BaseModel
         $where = [];
         $params = [];
         foreach ($conditions as $key => $value) {
-            $where[] = "$key = :$key";
+            $where[] = "`$key` = :$key";
             $params[":$key"] = $value;
         }
 
@@ -79,7 +79,9 @@ abstract class BaseModel
     {
         $fields = array_keys($data);
         $values = ':' . implode(', :', $fields);
-        $fieldsStr = implode(', ', $fields);
+        
+        // Wrap field names in backticks to handle reserved keywords
+        $fieldsStr = '`' . implode('`, `', $fields) . '`';
 
         $sql = "INSERT INTO {$this->table} ($fieldsStr) VALUES ($values)";
         $stmt = $this->db->prepare($sql);
@@ -110,7 +112,7 @@ abstract class BaseModel
             return true;
         }
 
-        $sql = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE id = :id";
+        $sql = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE `id` = :id";
         $stmt = $this->db->prepare($sql);
 
         foreach ($params as $key => $value) {
@@ -123,7 +125,7 @@ abstract class BaseModel
 
     public function delete($id)
     {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE id = :id");
+        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE `id` = :id");
         return $stmt->execute([':id' => $id]);
     }
 
@@ -135,7 +137,7 @@ abstract class BaseModel
         if (!empty($conditions)) {
             $where = [];
             foreach ($conditions as $key => $value) {
-                $where[] = "$key = :$key";
+                $where[] = "`$key` = :$key";
                 $params[":$key"] = $value;
             }
             $sql .= " WHERE " . implode(' AND ', $where);

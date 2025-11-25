@@ -2,12 +2,16 @@
 
 namespace App\Controllers;
 
+use App\Traits\LogsActivity;
+
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use App\Config\Database;
 
 class PromotionController
 {
+    use LogsActivity;
+
     /**
      * Process student promotions for an academic year
      * Only runs when all exams for the last term are published
@@ -19,6 +23,9 @@ class PromotionController
             $db = Database::getInstance()->getConnection();
             // Ensure placement/capacity columns exist before any SELECTs using them
             \App\Utils\Schema::ensureClassCapacityColumns($db);
+            // Ensure enrollment status column exists to avoid missing-column failures
+            \App\Utils\Schema::ensureEnrollmentStatusColumn($db);
+            $hasEnrollmentStatus = $this->hasEnrollmentStatusColumn($db);
 
             // Get academic year details
             $stmt = $db->prepare("
@@ -89,12 +96,13 @@ class PromotionController
             }
 
             // Get all classes for this academic year
+            $statusClause = $hasEnrollmentStatus ? " AND se.status = 'active'" : '';
             $stmt = $db->prepare("
                 SELECT DISTINCT c.id, c.class_name, c.grade_level
                 FROM classes c
                 INNER JOIN student_enrollments se ON c.id = se.class_id
                 WHERE se.academic_year_id = :year_id
-                AND se.status = 'active'
+                $statusClause
                 ORDER BY c.grade_level
             ");
             $stmt->execute([':year_id' => $academicYearId]);
@@ -113,7 +121,8 @@ class PromotionController
                     $academicYear['promotion_average'],
                     $academicYear['repeat_average'],
                     $academicYear['drop_average'],
-                    $capacityTracker
+                    $capacityTracker,
+                    $hasEnrollmentStatus
                 );
                 $promotionResults[] = [
                     'class_id' => $class['id'],
@@ -142,9 +151,10 @@ class PromotionController
     /**
      * Promote students in a specific class based on their performance
      */
-    private function promoteClassStudents($db, $academicYearId, $classId, $promotionAvg, $repeatAvg, $dropAvg, array &$capacityTracker)
+    private function promoteClassStudents($db, $academicYearId, $classId, $promotionAvg, $repeatAvg, $dropAvg, array &$capacityTracker, bool $hasEnrollmentStatus)
     {
         // Calculate overall average for each student in the class
+        $statusClause = $hasEnrollmentStatus ? " AND se.status = 'active'" : '';
         $stmt = $db->prepare("
             SELECT
                 s.id as student_id,
@@ -158,7 +168,7 @@ class PromotionController
             INNER JOIN exams e ON er.exam_id = e.id
             WHERE se.class_id = :class_id
             AND se.academic_year_id = :year_id
-            AND se.status = 'active'
+            $statusClause
             AND e.academic_year_id = :year_id2
             AND e.is_published = 1
             AND er.approval_status = 'approved'
@@ -193,21 +203,29 @@ class PromotionController
                 if ($destClassId !== null) {
                     $promoted[] = $studentData;
                     // Update current enrollment row with status, average and target class
-                    $stmtUp = $db->prepare("UPDATE student_enrollments SET status = 'completed', promotion_status = 'promoted', class_average = :avg, promoted_to_class_id = :dest, updated_at = NOW() WHERE student_id = :sid AND academic_year_id = :yid");
+                    if ($hasEnrollmentStatus) {
+                        $stmtUp = $db->prepare("UPDATE student_enrollments SET status = 'completed', promotion_status = 'promoted', class_average = :avg, promoted_to_class_id = :dest, updated_at = NOW() WHERE student_id = :sid AND academic_year_id = :yid");
+                    } else {
+                        $stmtUp = $db->prepare("UPDATE student_enrollments SET promotion_status = 'promoted', class_average = :avg, promoted_to_class_id = :dest, updated_at = NOW() WHERE student_id = :sid AND academic_year_id = :yid");
+                    }
                     $stmtUp->execute([':avg' => round($average,2), ':dest' => $destClassId, ':sid' => $student['student_id'], ':yid' => $academicYearId]);
                 } else {
                     // No capacity available: mark as waitlist
-                    $waitStmt = $db->prepare("UPDATE student_enrollments SET status = 'completed', promotion_status = 'waitlist', class_average = :avg, promoted_to_class_id = NULL, updated_at = NOW() WHERE student_id = :sid AND academic_year_id = :yid");
+                    if ($hasEnrollmentStatus) {
+                        $waitStmt = $db->prepare("UPDATE student_enrollments SET status = 'completed', promotion_status = 'waitlist', class_average = :avg, promoted_to_class_id = NULL, updated_at = NOW() WHERE student_id = :sid AND academic_year_id = :yid");
+                    } else {
+                        $waitStmt = $db->prepare("UPDATE student_enrollments SET promotion_status = 'waitlist', class_average = :avg, promoted_to_class_id = NULL, updated_at = NOW() WHERE student_id = :sid AND academic_year_id = :yid");
+                    }
                     $waitStmt->execute([':avg' => round($average,2), ':sid' => $student['student_id'], ':yid' => $academicYearId]);
                 }
             } elseif ($average >= $repeatAvg) {
                 $repeat[] = $studentData;
                 // Update student enrollment status to repeat
-                $this->updateStudentStatus($db, $student['student_id'], $academicYearId, 'repeat');
+                $this->updateStudentStatus($db, $student['student_id'], $academicYearId, 'repeat', $hasEnrollmentStatus);
             } else {
                 $dropped[] = $studentData;
                 // Update student enrollment status to dropped
-                $this->updateStudentStatus($db, $student['student_id'], $academicYearId, 'dropped');
+                $this->updateStudentStatus($db, $student['student_id'], $academicYearId, 'dropped', $hasEnrollmentStatus);
             }
         }
 
@@ -265,12 +283,15 @@ class PromotionController
             $db = Database::getInstance()->getConnection();
             // Ensure placement/capacity columns exist to avoid SQL errors (c2.capacity etc.)
             \App\Utils\Schema::ensureClassCapacityColumns($db);
+            \App\Utils\Schema::ensureEnrollmentStatusColumn($db);
+            $hasEnrollmentStatus = $this->hasEnrollmentStatusColumn($db);
+            $statusClause = $hasEnrollmentStatus ? " AND se.status = 'active'" : '';
 
             // Get classes for this academic year (source classes)
             $stmt = $db->prepare("SELECT DISTINCT c.id, c.class_name, c.grade_level
                                    FROM classes c
                                    INNER JOIN student_enrollments se ON c.id = se.class_id
-                                   WHERE se.academic_year_id = :yid AND se.status = 'active'");
+                                   WHERE se.academic_year_id = :yid{$statusClause}");
             $stmt->execute([':yid' => $yearId]);
             $classes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -283,7 +304,7 @@ class PromotionController
                                       INNER JOIN exam_results er ON s.id = er.student_id
                                       INNER JOIN exams e ON er.exam_id = e.id
                                       WHERE se.class_id = :cid AND se.academic_year_id = :yid
-                                        AND se.status = 'active' AND e.academic_year_id = :yid2
+                                        {$statusClause} AND e.academic_year_id = :yid2
                                         AND e.is_published = 1 AND er.approval_status = 'approved'
                                       GROUP BY s.id");
                 $stu->execute([':cid' => $class['id'], ':yid' => $yearId, ':yid2' => $yearId]);
@@ -413,6 +434,8 @@ class PromotionController
             $db = Database::getInstance()->getConnection();
             // Ensure capacity column exists before capacity checks
             \App\Utils\Schema::ensureClassCapacityColumns($db);
+            \App\Utils\Schema::ensureEnrollmentStatusColumn($db);
+            $hasEnrollmentStatus = $this->hasEnrollmentStatusColumn($db);
 
             // Prevent duplicate enrollment in target year
             $stmt = $db->prepare("SELECT id FROM student_enrollments WHERE student_id = :sid AND academic_year_id = :yid");
@@ -439,8 +462,13 @@ class PromotionController
             }
 
             // Create target year enrollment
-            $ins = $db->prepare("INSERT INTO student_enrollments (student_id, class_id, academic_year_id, status, created_at) VALUES (:sid, :cid, :yid, 'active', NOW())");
-            $ins->execute([':sid' => $studentId, ':cid' => $classId, ':yid' => $targetYearId]);
+            if ($hasEnrollmentStatus) {
+                $ins = $db->prepare("INSERT INTO student_enrollments (student_id, class_id, academic_year_id, status, created_at) VALUES (:sid, :cid, :yid, 'active', NOW())");
+                $ins->execute([':sid' => $studentId, ':cid' => $classId, ':yid' => $targetYearId]);
+            } else {
+                $ins = $db->prepare("INSERT INTO student_enrollments (student_id, class_id, academic_year_id, created_at) VALUES (:sid, :cid, :yid, NOW())");
+                $ins->execute([':sid' => $studentId, ':cid' => $classId, ':yid' => $targetYearId]);
+            }
 
             // Activity log (principal/admin override)
             try {
@@ -475,22 +503,38 @@ class PromotionController
     /**
      * Update student enrollment status
      */
-    private function updateStudentStatus($db, $studentId, $academicYearId, $status)
+    private function updateStudentStatus($db, $studentId, $academicYearId, $status, bool $hasEnrollmentStatus)
     {
-        $stmt = $db->prepare("
-            UPDATE student_enrollments
-            SET status = :status,
-                promotion_status = :promotion_status,
-                updated_at = NOW()
-            WHERE student_id = :student_id
-            AND academic_year_id = :year_id
-        ");
-        $stmt->execute([
-            ':status' => $status === 'promoted' ? 'completed' : $status,
-            ':promotion_status' => $status,
-            ':student_id' => $studentId,
-            ':year_id' => $academicYearId
-        ]);
+        if ($hasEnrollmentStatus) {
+            $stmt = $db->prepare("
+                UPDATE student_enrollments
+                SET status = :status,
+                    promotion_status = :promotion_status,
+                    updated_at = NOW()
+                WHERE student_id = :student_id
+                AND academic_year_id = :year_id
+            ");
+            $stmt->execute([
+                ':status' => $status === 'promoted' ? 'completed' : $status,
+                ':promotion_status' => $status,
+                ':student_id' => $studentId,
+                ':year_id' => $academicYearId
+            ]);
+        } else {
+            // Fallback for schemas without status column
+            $stmt = $db->prepare("
+                UPDATE student_enrollments
+                SET promotion_status = :promotion_status,
+                    updated_at = NOW()
+                WHERE student_id = :student_id
+                AND academic_year_id = :year_id
+            ");
+            $stmt->execute([
+                ':promotion_status' => $status,
+                ':student_id' => $studentId,
+                ':year_id' => $academicYearId
+            ]);
+        }
     }
 
     /**
@@ -587,6 +631,8 @@ class PromotionController
             $db = Database::getInstance()->getConnection();
             // Ensure placement/capacity columns exist for capacity checks/joins
             \App\Utils\Schema::ensureClassCapacityColumns($db);
+            \App\Utils\Schema::ensureEnrollmentStatusColumn($db);
+            $hasEnrollmentStatus = $this->hasEnrollmentStatusColumn($db);
 
             // Validate both years exist
             $stmt = $db->prepare('SELECT id FROM academic_years WHERE id IN (:s,:t)');
@@ -608,8 +654,13 @@ class PromotionController
             $enrollments = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
             $created = 0; $skipped = 0; $errors = 0;
-            $ins = $db->prepare("INSERT INTO student_enrollments (student_id, class_id, academic_year_id, status, created_at)
+            if ($hasEnrollmentStatus) {
+                $ins = $db->prepare("INSERT INTO student_enrollments (student_id, class_id, academic_year_id, status, created_at)
                                   VALUES (:sid, :cid, :yid, 'active', NOW())");
+            } else {
+                $ins = $db->prepare("INSERT INTO student_enrollments (student_id, class_id, academic_year_id, created_at)
+                                  VALUES (:sid, :cid, :yid, NOW())");
+            }
             $exists = $db->prepare("SELECT id FROM student_enrollments WHERE student_id = :sid AND academic_year_id = :yid");
 
             // Preload current counts per class for target year capacity checks
@@ -678,4 +729,23 @@ class PromotionController
             return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
         }
     }
+
+    /**
+     * Check if student_enrollments has a status column (guards deployments missing this field)
+     */
+    private function hasEnrollmentStatusColumn(\PDO $db): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        try {
+            $stmt = $db->query("SHOW COLUMNS FROM student_enrollments LIKE 'status'");
+            $cached = $stmt && $stmt->rowCount() > 0;
+            return $cached;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
 }
+

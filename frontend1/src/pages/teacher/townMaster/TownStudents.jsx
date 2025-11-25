@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios from '@/redux/axiosConfig';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,8 +27,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-
 const TownStudents = ({ townData, onRefresh }) => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -44,7 +42,7 @@ const TownStudents = ({ townData, onRefresh }) => {
     try {
       setLoading(true);
       const params = selectedBlock ? `?block_id=${selectedBlock}` : '';
-      const response = await axios.get(`${API_URL}/teacher/town-master/students${params}`);
+      const response = await axios.get(`/teacher/town-master/students${params}`);
       if (response.data.success) {
         setStudents(response.data.students || []);
       }

@@ -28,12 +28,12 @@ class Mailer
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($row && $row['email_settings']) {
-                $this->settings = json_decode($row['email_settings'], true);
+                $this->settings = $this->normalizeSettings(json_decode($row['email_settings'], true));
             } else {
-                $this->settings = $this->getDefaultSettings();
+                $this->settings = $this->normalizeSettings($this->getDefaultSettings());
             }
         } catch (\Exception $e) {
-            $this->settings = $this->getDefaultSettings();
+            $this->settings = $this->normalizeSettings($this->getDefaultSettings());
         }
     }
 
@@ -50,6 +50,20 @@ class Mailer
         ];
     }
 
+    /**
+     * Normalize and correct known-bad settings so email sending doesn't fail
+     */
+    private function normalizeSettings(array $settings): array
+    {
+        $host = strtolower($settings['smtp_host'] ?? '');
+        if ($host === 'smtp.titan.email' || strpos($host, 'titan.email') !== false) {
+            $settings['smtp_host'] = 'smtp.hostinger.com';
+            error_log('Mailer: Replacing deprecated smtp.titan.email with smtp.hostinger.com');
+        }
+
+        return $settings;
+    }
+
     private function configure()
     {
         try {
@@ -59,8 +73,33 @@ class Mailer
             $this->mailer->SMTPAuth = true;
             $this->mailer->Username = $this->settings['smtp_username'];
             $this->mailer->Password = $this->settings['smtp_password'];
-            $this->mailer->SMTPSecure = $this->settings['smtp_encryption'];
+            
+            // Handle encryption type - convert to PHPMailer constants
+            $encryption = strtolower($this->settings['smtp_encryption'] ?? 'tls');
+            if ($encryption === 'ssl' || $this->settings['smtp_port'] == 465) {
+                $this->mailer->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS; // SSL for port 465
+            } elseif ($encryption === 'tls' || $encryption === 'starttls') {
+                $this->mailer->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; // TLS for port 587
+            } else {
+                $this->mailer->SMTPSecure = $encryption;
+            }
+            
             $this->mailer->Port = $this->settings['smtp_port'];
+            
+            // Timeouts and debugging
+            $this->mailer->Timeout = 30;
+            $this->mailer->SMTPDebug = 0; // Set to 2 for debugging
+            $this->mailer->SMTPKeepAlive = false; // Don't keep connection open
+            $this->mailer->SMTPAutoTLS = true; // Auto enable TLS if available
+            
+            // SSL options for compatibility
+            $this->mailer->SMTPOptions = array(
+                'ssl' => array(
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true
+                )
+            );
             
             // Sender info
             $this->mailer->setFrom(
@@ -102,6 +141,15 @@ class Mailer
             $this->logEmail($to, $subject, 'failed', $this->mailer->ErrorInfo);
             return false;
         }
+    }
+
+    /**
+     * Enable debug mode
+     */
+    public function enableDebug($level = 2)
+    {
+        $this->mailer->SMTPDebug = $level;
+        $this->mailer->Debugoutput = 'echo';
     }
 
     /**
@@ -147,6 +195,7 @@ class Mailer
         
         $body = $this->getTemplate('password-reset', [
             'name' => $name,
+            'email' => $email,
             'reset_url' => $resetUrl,
             'reset_token' => $resetToken,
             'expires_in' => '1 hour',
@@ -196,45 +245,101 @@ class Mailer
      */
     private function getDefaultTemplate($template, $data)
     {
-        $schoolName = $this->settings['from_name'] ?? 'School Management System';
+        $schoolName = $this->settings['from_name'] ?? 'BoSchool';
+        $logoUrl = isset($_ENV['APP_URL']) ? rtrim($_ENV['APP_URL'], '/') . '/Bo-School-logo.png' : 'https://via.placeholder.com/180x80/667eea/ffffff?text=BoSchool';
+        $currentYear = date('Y');
+        
+        $baseStyle = "
+            <style>
+                body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+                .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
+                .logo { max-width: 180px; height: auto; margin-bottom: 20px; background-color: white; padding: 15px; border-radius: 10px; }
+                .button { display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; border-radius: 50px; font-size: 16px; font-weight: 600; }
+            </style>
+        ";
         
         switch ($template) {
             case 'welcome':
-                return "
-                    <h2>Welcome to {$schoolName}!</h2>
-                    <p>Dear {$data['name']},</p>
-                    <p>Your account has been created successfully.</p>
-                    <p><strong>Role:</strong> {$data['role']}</p>
-                    <p><strong>Email:</strong> {$data['email']}</p>
-                    " . ($data['temp_password'] ? "<p><strong>Temporary Password:</strong> {$data['temp_password']}</p>" : "") . "
-                    <p>Please login at: <a href='{$data['login_url']}'>{$data['login_url']}</a></p>
-                    <p>Best regards,<br>{$schoolName}</p>
-                ";
+                return "<!DOCTYPE html><html><head>{$baseStyle}</head><body style='background-color: #f5f5f5; padding: 20px;'>
+                    <div class='container' style='border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
+                        <div class='header'>
+                            <img src='{$logoUrl}' alt='{$schoolName}' class='logo'>
+                            <h1 style='color: #ffffff; margin: 0; font-size: 28px;'>Welcome to {$schoolName}!</h1>
+                        </div>
+                        <div style='padding: 40px 30px;'>
+                            <p style='font-size: 16px; color: #333;'>Dear <strong>{$data['name']}</strong>,</p>
+                            <p style='font-size: 16px; color: #555; line-height: 1.6;'>Your account has been created successfully. Welcome to our school management system!</p>
+                            <div style='background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                                <p style='margin: 5px 0; color: #333;'><strong>Role:</strong> {$data['role']}</p>
+                                <p style='margin: 5px 0; color: #333;'><strong>Email:</strong> {$data['email']}</p>
+                                " . ($data['temp_password'] ? "<p style='margin: 5px 0; color: #333;'><strong>Temporary Password:</strong> {$data['temp_password']}</p>" : "") . "
+                            </div>
+                            <div style='text-align: center; margin: 30px 0;'>
+                                <a href='{$data['login_url']}' class='button'>Login to Your Account</a>
+                            </div>
+                            <p style='font-size: 14px; color: #777;'>Best regards,<br><strong style='color: #667eea;'>{$schoolName} Team</strong></p>
+                        </div>
+                        <div style='background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #e9ecef;'>
+                            <p style='color: #6c757d; font-size: 12px; margin: 0;'>&copy; {$currentYear} {$schoolName}. All rights reserved.</p>
+                        </div>
+                    </div>
+                </body></html>";
                 
             case 'password-reset':
-                return "
-                    <h2>Password Reset Request</h2>
-                    <p>Dear {$data['name']},</p>
-                    <p>We received a request to reset your password. Click the link below to reset it:</p>
-                    <p><a href='{$data['reset_url']}' style='padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;'>Reset Password</a></p>
-                    <p>Or copy this link: {$data['reset_url']}</p>
-                    <p>This link will expire in {$data['expires_in']}.</p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                    <p>Best regards,<br>{$schoolName}</p>
-                ";
+                return "<!DOCTYPE html><html><head>{$baseStyle}</head><body style='background-color: #f5f5f5; padding: 20px;'>
+                    <div class='container' style='border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
+                        <div class='header'>
+                            <img src='{$logoUrl}' alt='{$schoolName}' class='logo'>
+                            <h1 style='color: #ffffff; margin: 0; font-size: 28px;'>Password Reset Request</h1>
+                        </div>
+                        <div style='padding: 40px 30px;'>
+                            <p style='font-size: 16px; color: #333;'>Hello <strong>{$data['name']}</strong>,</p>
+                            <p style='font-size: 16px; color: #555; line-height: 1.6;'>We received a request to reset your password. Click the button below to create a new password:</p>
+                            <div style='text-align: center; margin: 30px 0;'>
+                                <a href='{$data['reset_url']}' class='button'>Reset Your Password</a>
+                            </div>
+                            <div style='background-color: #f8f9fa; padding: 15px; border-left: 4px solid #667eea; margin: 20px 0;'>
+                                <p style='font-size: 13px; color: #555; margin: 0;'>Or copy this link: <br><span style='color: #667eea;'>{$data['reset_url']}</span></p>
+                            </div>
+                            <div style='background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;'>
+                                <p style='font-size: 14px; color: #856404; margin: 0;'>⏱️ This link will expire in {$data['expires_in']}.</p>
+                            </div>
+                            <p style='font-size: 15px; color: #555;'>If you didn't request this, please ignore this email.</p>
+                            <p style='font-size: 14px; color: #777;'>Best regards,<br><strong style='color: #667eea;'>{$schoolName} Team</strong></p>
+                        </div>
+                        <div style='background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #e9ecef;'>
+                            <p style='color: #6c757d; font-size: 12px; margin: 0;'>&copy; {$currentYear} {$schoolName}. All rights reserved.</p>
+                        </div>
+                    </div>
+                </body></html>";
                 
             case 'verification':
-                return "
-                    <h2>Verify Your Email</h2>
-                    <p>Dear {$data['name']},</p>
-                    <p>Please verify your email address by clicking the link below:</p>
-                    <p><a href='{$data['verify_url']}' style='padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px;'>Verify Email</a></p>
-                    <p>Or copy this link: {$data['verify_url']}</p>
-                    <p>Best regards,<br>{$schoolName}</p>
-                ";
+                return "<!DOCTYPE html><html><head>{$baseStyle}</head><body style='background-color: #f5f5f5; padding: 20px;'>
+                    <div class='container' style='border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
+                        <div class='header'>
+                            <img src='{$logoUrl}' alt='{$schoolName}' class='logo'>
+                            <h1 style='color: #ffffff; margin: 0; font-size: 28px;'>Verify Your Email</h1>
+                        </div>
+                        <div style='padding: 40px 30px;'>
+                            <p style='font-size: 16px; color: #333;'>Dear <strong>{$data['name']}</strong>,</p>
+                            <p style='font-size: 16px; color: #555; line-height: 1.6;'>Please verify your email address by clicking the button below:</p>
+                            <div style='text-align: center; margin: 30px 0;'>
+                                <a href='{$data['verify_url']}' class='button' style='background: linear-gradient(135deg, #28a745 0%, #20c997 100%);'>Verify Email</a>
+                            </div>
+                            <div style='background-color: #f8f9fa; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;'>
+                                <p style='font-size: 13px; color: #555; margin: 0;'>Or copy this link: <br><span style='color: #28a745;'>{$data['verify_url']}</span></p>
+                            </div>
+                            <p style='font-size: 14px; color: #777;'>Best regards,<br><strong style='color: #667eea;'>{$schoolName} Team</strong></p>
+                        </div>
+                        <div style='background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #e9ecef;'>
+                            <p style='color: #6c757d; font-size: 12px; margin: 0;'>&copy; {$currentYear} {$schoolName}. All rights reserved.</p>
+                        </div>
+                    </div>
+                </body></html>";
                 
             default:
-                return "<p>Message from {$schoolName}</p>";
+                return "<html><body><p>Message from {$schoolName}</p></body></html>";
         }
     }
 

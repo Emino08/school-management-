@@ -11,9 +11,14 @@ use App\Models\GradeUpdateRequest;
 use App\Models\ResultModel;
 use App\Utils\JWT;
 use App\Utils\Validator;
+use App\Traits\LogsActivity;
+use App\Traits\ResolvesAdminId;
 
 class TeacherController
 {
+    use LogsActivity;
+    use ResolvesAdminId;
+
     private $teacherModel;
     private $assignmentModel;
     private $academicYearModel;
@@ -33,6 +38,7 @@ class TeacherController
     {
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         // Base validation rules
         $rules = [
@@ -110,7 +116,7 @@ class TeacherController
             }
 
             $teacherData = Validator::sanitize([
-                'admin_id' => $user->id,
+                'admin_id' => $adminId,
                 'name' => $fullName,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
@@ -133,7 +139,7 @@ class TeacherController
             if ($teacherData['is_class_master'] && $teacherData['class_master_of']) {
                 $db = \App\Config\Database::getInstance()->getConnection();
                 $stmt = $db->prepare("SELECT id, name FROM teachers WHERE admin_id = :admin_id AND is_class_master = 1 AND class_master_of = :class_id");
-                $stmt->execute([':admin_id' => $user->id, ':class_id' => $teacherData['class_master_of']]);
+                $stmt->execute([':admin_id' => $adminId, ':class_id' => $teacherData['class_master_of']]);
                 $existingMaster = $stmt->fetch(\PDO::FETCH_ASSOC);
                 if ($existingMaster && (int)$existingMaster['id'] !== (int)$teacherId) {
                     // Revert role to prevent conflict
@@ -155,7 +161,7 @@ class TeacherController
             }
             if (!empty($subjects)) {
                 // Get current academic year
-                $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+                $currentYear = $this->academicYearModel->getCurrentYear($adminId);
                 
                 if ($currentYear) {
                     // Insert teacher-subject assignments
@@ -179,7 +185,7 @@ class TeacherController
             if ($teacherData['is_exam_officer']) {
                 $examOfficerModel = new \App\Models\ExamOfficer();
                 $examOfficerModel->create([
-                    'admin_id' => $user->id,
+                    'admin_id' => $adminId,
                     'name' => $teacherData['name'],
                     'email' => $teacherData['email'],
                     'password' => password_hash($teacherData['password'], PASSWORD_BCRYPT),
@@ -255,10 +261,11 @@ class TeacherController
     public function getAllTeachers(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
-            $teachers = $this->teacherModel->getTeachersWithSubjects($user->id, $currentYear ? $currentYear['id'] : null);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
+            $teachers = $this->teacherModel->getTeachersWithSubjects($adminId, $currentYear ? $currentYear['id'] : null);
 
             $response->getBody()->write(json_encode(['success' => true, 'teachers' => $teachers]));
             return $response->withHeader('Content-Type', 'application/json');
@@ -317,6 +324,7 @@ class TeacherController
         $raw = $request->getParsedBody();
         $teachSubjects = isset($data['teachSubjects']) ? $data['teachSubjects'] : null;
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
         
         // Verify teacher exists and belongs to admin
         $teacher = $this->teacherModel->findById($args['id']);
@@ -421,7 +429,7 @@ class TeacherController
                 $db = \App\Config\Database::getInstance()->getConnection();
                 $stmt = $db->prepare("SELECT id, name FROM teachers WHERE admin_id = :admin_id AND is_class_master = 1 AND class_master_of = :class_id AND id <> :teacher_id");
                 $stmt->execute([
-                    ':admin_id' => $user->id,
+                    ':admin_id' => $adminId,
                     ':class_id' => (int)$data['class_master_of'],
                     ':teacher_id' => (int)$args['id']
                 ]);
@@ -449,7 +457,7 @@ class TeacherController
             
             // Update subject assignments if provided (from original payload)
             if (!empty($teachSubjects) && is_array($teachSubjects)) {
-                $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+                $currentYear = $this->academicYearModel->getCurrentYear($adminId);
                 
                 if ($currentYear) {
                     // Delete existing assignments for current year
@@ -612,6 +620,7 @@ class TeacherController
     {
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         $errors = Validator::validate($data, ['teacher_id' => 'required|numeric', 'subject_id' => 'required|numeric']);
         if (!empty($errors)) {
@@ -620,7 +629,7 @@ class TeacherController
         }
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $assignmentId = $this->assignmentModel->assignTeacher($data['teacher_id'], $data['subject_id'], $currentYear['id']);
 
             $response->getBody()->write(json_encode(['success' => true, 'message' => 'Subject assigned successfully', 'assignment_id' => $assignmentId]));
@@ -634,10 +643,18 @@ class TeacherController
     public function getTeacherSubjects(Request $request, Response $response, $args)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
+        $query = $request->getQueryParams();
+        $classId = isset($query['class_id']) ? (int)$query['class_id'] : null;
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $subjects = $this->assignmentModel->getTeacherSubjects($args['id'], $currentYear ? $currentYear['id'] : null);
+            if ($classId) {
+                $subjects = array_values(array_filter($subjects, function ($sub) use ($classId) {
+                    return isset($sub['class_id']) && (int)$sub['class_id'] === $classId;
+                }));
+            }
 
             $response->getBody()->write(json_encode(['success' => true, 'subjects' => $subjects]));
             return $response->withHeader('Content-Type', 'application/json');
@@ -650,9 +667,10 @@ class TeacherController
     public function getTeacherClasses(Request $request, Response $response, $args)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             $classes = $this->assignmentModel->getTeacherClasses($args['id'], $currentYear ? $currentYear['id'] : null);
 
             $response->getBody()->write(json_encode(['success' => true, 'classes' => $classes]));
@@ -666,9 +684,10 @@ class TeacherController
     public function removeSubjectAssignment(Request $request, Response $response, $args)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             if (!$currentYear) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'No active academic year found']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -703,9 +722,10 @@ class TeacherController
         $teacherId = $args['teacherId'];
         $subjectId = $args['subjectId'];
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             if (!$currentYear) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'No active academic year found']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -764,6 +784,7 @@ class TeacherController
         $subjectId = $args['subjectId'];
         $data = $request->getParsedBody();
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         $errors = Validator::validate($data, [
             'student_id' => 'required|numeric',
@@ -777,7 +798,7 @@ class TeacherController
         }
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             if (!$currentYear) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'No active academic year found']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -879,9 +900,10 @@ class TeacherController
         $teacherId = $args['teacherId'];
         $subjectId = $args['subjectId'];
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             if (!$currentYear) {
                 $response->getBody()->write(json_encode(['success' => false, 'message' => 'No active academic year found']));
                 return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
@@ -1150,9 +1172,10 @@ class TeacherController
     public function getDashboardStats(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
 
         try {
-            $currentYear = $this->academicYearModel->getCurrentYear($user->id);
+            $currentYear = $this->academicYearModel->getCurrentYear($adminId);
             if (!$currentYear) {
                 $response->getBody()->write(json_encode([
                     'success' => false,
@@ -1287,6 +1310,7 @@ class TeacherController
     public function bulkUpload(Request $request, Response $response)
     {
         $user = $request->getAttribute('user');
+        $adminId = $this->getAdminId($request, $user);
         $uploadedFiles = $request->getUploadedFiles();
 
         if (empty($uploadedFiles['file'])) {
@@ -1393,7 +1417,7 @@ class TeacherController
 
                 // Create teacher
                 $teacherData = [
-                    'admin_id' => $user->id,
+                    'admin_id' => $adminId,
                     'name' => $fullName,
                     'first_name' => $firstName,
                     'last_name' => $lastName,
@@ -1463,5 +1487,6 @@ class TeacherController
         return $rows;
     }
 }
+
 
 

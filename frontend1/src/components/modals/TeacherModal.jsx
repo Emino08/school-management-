@@ -22,7 +22,7 @@ import { getSubjectList } from '../../redux/sclassRelated/sclassHandle';
 
 const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID: propAdminID }) => {
   const dispatch = useDispatch();
-  const { currentUser, status, response } = useSelector((state) => state.user);
+  const { currentUser, status, response, validationErrors } = useSelector((state) => state.user);
   
   const [formData, setFormData] = useState({
     first_name: '',
@@ -133,7 +133,12 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
       if (onSuccess) onSuccess();
       dispatch(underControl());
     } else if (status === 'failed') {
-      toast.error(response || 'Failed to add teacher');
+      const validationMessage = validationErrors
+        ? Object.entries(validationErrors)
+            .map(([field, message]) => `${field}: ${message}`)
+            .join(' | ')
+        : null;
+      toast.error(validationMessage || response || 'Failed to add teacher');
       setLoading(false);
       dispatch(underControl());
     } else if (status === 'error') {
@@ -141,7 +146,7 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
       setLoading(false);
       dispatch(underControl());
     }
-  }, [status, response, dispatch, onSuccess]);
+  }, [status, response, validationErrors, dispatch, onSuccess]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -157,11 +162,21 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
 
     setLoading(true);
 
+    const firstName = formData.first_name.trim();
+    const lastName = formData.last_name.trim();
+    const teacherName = [firstName, lastName].filter(Boolean).join(' ');
+
+    const trimmedEmail = formData.email.trim();
+    const trimmedPhone = formData.phone.trim();
+    const nameValue = teacherName || firstName || lastName || trimmedEmail;
+
     const fields = {
-      name: formData.name,
-      email: formData.email,
+      name: nameValue,
+      first_name: firstName,
+      last_name: lastName,
+      email: trimmedEmail,
       password: formData.password,
-      phone: formData.phone,
+      phone: trimmedPhone,
       role: 'Teacher',
       teachSubjects: formData.teachSubjects, // Array of subject IDs
       teachSclass: formData.teachSclass,
@@ -178,6 +193,8 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
 
   const handleClose = () => {
     setFormData({
+      first_name: '',
+      last_name: '',
       name: '',
       email: '',
       password: '',
@@ -263,6 +280,18 @@ const TeacherModal = ({ open, onOpenChange, preSelectedClass, onSuccess, adminID
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6 mt-4">
+          {validationErrors && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p className="font-semibold text-red-700">Validation issues:</p>
+              <ul className="list-disc list-inside mt-1 space-y-1">
+                {Object.entries(validationErrors).map(([field, message]) => (
+                  <li key={field}>
+                    <span className="font-semibold">{field}</span>: {message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {/* Basic Information Section */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 pb-2 border-b border-gray-200">

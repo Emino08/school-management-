@@ -9,7 +9,10 @@ import { Eye, EyeOff, Loader2, ArrowLeft } from "lucide-react";
 import BoSchoolLogo from "@/assets/Bo-School-logo.png";
 import BackgroundImage from "@/assets/boSchool.jpg";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_BASE_URL_LOCAL ||
+  'http://localhost:8080/api';
 
 const MedicalLogin = () => {
   const navigate = useNavigate();
